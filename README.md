@@ -29,6 +29,33 @@ npm install
 npm run dev
 ```
 
+## 🗄️ Migrações e ambiente de teste
+
+O schema inteiro está em `supabase/migrations/`, a partir de uma linha de base
+(`20261030120000_esquema_base.sql`) tirada da produção em 30/10/2026. Antes dela, as
+tabelas centrais tinham sido criadas pelo painel e nunca viraram migração; as seis
+migrações daquela época seguem em `supabase/migracoes-historicas/`, só para consulta.
+
+| Projeto Supabase | ref |
+|---|---|
+| Produção | `jljqkxkncubvcxyvrtdl` |
+| Ambiente de Teste | `xiswismliggsmzltsavb` |
+
+A CLI fala com um projeto por vez — o do último `supabase link`. Teste a migração no
+Ambiente de Teste antes de levá-la à produção:
+
+```bash
+npx supabase link --project-ref xiswismliggsmzltsavb
+npx supabase db push
+# conferiu? então:
+npx supabase link --project-ref jljqkxkncubvcxyvrtdl
+npx supabase db push
+```
+
+> Funções que só a Edge Function pode chamar precisam de `revoke execute ... from anon,
+> authenticated` explícito: num projeto novo o Supabase concede `EXECUTE` a esses papéis
+> por padrão, e o `REVOKE ... FROM PUBLIC` sozinho não basta. Veja o fim da linha de base.
+
 ## 📊 Estrutura da base
 
 | Tabela | Papel |
@@ -250,7 +277,7 @@ A aba 1 da planilha descreve os trabalhos de titulação (título, ano, faculdad
 e link), e eles **não são digitados de novo** na aba de bibliografia. As 581 entradas
 correspondentes — *Dissertação de Mestrado*, *Tese de Doutorado* e *Tese de
 Livre-Docência* — vivem na mesma tabela das demais obras, com `tipo_obra` próprio
-(migração `20260914120000_teses_como_obras.sql`, idempotente).
+(migração `supabase/migracoes-historicas/20260914120000_teses_como_obras.sql`, idempotente).
 
 Repetir o dado nas duas abas criaria duas versões do mesmo trabalho, que divergem na
 primeira correção feita só de um lado.
