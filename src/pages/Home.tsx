@@ -24,17 +24,21 @@ export const Home = () => {
       {/*
         A abertura é o próprio banner do grupo, no lugar do título escrito:
         ele já traz o nome, o selo da USP e o brasão da Faculdade.
-        O respiro acima e abaixo da imagem é o mesmo (mt-10), para ela ficar
-        centrada entre a barra de navegação e os botões, e não colada em uma
-        das pontas.
+
+        A faixa vai de borda a borda da tela, mas a imagem não: ela tem
+        1170px e esticada ficaria borrada. O que preenche as laterais é a
+        cor da borda do banner — #258989 em todos os lados, a mesma da
+        barra de navegação —, então faixa e imagem emendam sem costura.
+        As margens em vw tiram a faixa dos contêineres de largura máxima;
+        o overflow-x-clip do <main> segura a sobra da barra de rolagem.
       */}
-      <section className="mt-10 -mx-4 sm:-mx-6 lg:-mx-8">
+      <section className="mx-[calc(50%-50vw)] bg-[var(--logo-teal)]">
         <img
           src={banner}
           alt="Bibliografia Processual Feminina — grupo de pesquisa da Faculdade de Direito da Universidade de São Paulo"
           width={1170}
           height={472}
-          className="w-full h-auto block"
+          className="w-full max-w-[1170px] h-auto block mx-auto"
         />
       </section>
 

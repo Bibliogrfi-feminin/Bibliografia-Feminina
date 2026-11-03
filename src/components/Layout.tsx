@@ -190,7 +190,8 @@ export const Layout = () => {
         )}
       </nav>
 
-      <main className="flex-1 flex flex-col">
+      {/* clip, e não hidden: corta a faixa do banner da Home sem quebrar o sticky de O Projeto */}
+      <main className="flex-1 flex flex-col overflow-x-clip">
         {/* paginas institucionais ja trazem o proprio titulo; repetir a rota
             aqui em cima duplicava o cabecalho */}
         {!SEM_CABECALHO.has(location.pathname) && (
