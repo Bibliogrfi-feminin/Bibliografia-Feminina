@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo, useRef, ReactNode } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
 import { Search, Download, ChevronRight, X } from "lucide-react";
 import { baixarXlsx, baixarCsv, deRegistros } from "../lib/xlsx";
 import { getAssociadas, getObras, Associada, Obra, semAcento } from "../lib/base";
 import { BuscaObras } from "../components/BuscaObras";
+import { Chip, Paginacao, ROTULO_FILTRO, SELECT_CHIP } from "../components/ConsultaUI";
 
 const POR_PAGINA = 15;
 
@@ -28,28 +29,6 @@ const FLAGS = [
 ] as const;
 
 type IdFlag = (typeof FLAGS)[number]["id"];
-
-const Chip = ({ ativo, onClick, children }: { ativo: boolean; onClick: () => void; children: ReactNode }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    aria-pressed={ativo}
-    className={`px-3.5 py-1.5 rounded-full text-[13px] font-semibold border transition-colors whitespace-nowrap ${
-      ativo
-        ? "bg-[var(--accent)] text-white border-transparent"
-        : "bg-white text-[var(--text-muted)] border-[var(--border)] hover:text-[var(--accent)] hover:border-[var(--heading)]"
-    }`}
-  >
-    {children}
-  </button>
-);
-
-/** 1 … 4 5 6 … 26: a página atual com vizinhas, mais as pontas */
-function numerosDePagina(atual: number, total: number): (number | "…")[] {
-  const set = new Set([1, total, atual - 1, atual, atual + 1].filter((n) => n >= 1 && n <= total));
-  const ordem = [...set].sort((a, b) => a - b);
-  return ordem.flatMap((n, i) => (i > 0 && n - ordem[i - 1] > 1 ? ["…" as const, n] : [n]));
-}
 
 /**
  * Consulta de pessoas.
@@ -184,8 +163,6 @@ const BuscaPessoas = () => {
     }
   };
 
-  const rotuloFiltro = "text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]";
-
   return (
     <div className="space-y-5">
       <form onSubmit={(e) => e.preventDefault()} className="bg-white p-5 md:p-6 rounded-xl border border-[var(--border)] space-y-5">
@@ -211,23 +188,23 @@ const BuscaPessoas = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <span className={`${rotuloFiltro} mr-1 w-full sm:w-auto`}>Titulação</span>
+          <span className={`${ROTULO_FILTRO} mr-1 w-full sm:w-auto`}>Titulação</span>
           {TITULACOES.map((t) => (
             <Chip key={t.id} ativo={formacao === t.id} onClick={() => setFormacao(t.id)}>{t.rotulo}</Chip>
           ))}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <span className={`${rotuloFiltro} mr-1 w-full sm:w-auto`}>Mostrar só</span>
+          <span className={`${ROTULO_FILTRO} mr-1 w-full sm:w-auto`}>Mostrar só</span>
           {FLAGS.map((f) => (
             <Chip key={f.id} ativo={flags.has(f.id)} onClick={() => alternarFlag(f.id)}>{f.rotulo}</Chip>
           ))}
           <label className="flex items-center gap-2 sm:ml-3">
-            <span className={rotuloFiltro}>UF</span>
+            <span className={ROTULO_FILTRO}>UF</span>
             <select
               value={uf}
               onChange={(e) => setUf(e.target.value)}
-              className="px-3 py-1.5 bg-white border border-[var(--border)] rounded-full text-[13px] font-semibold text-[var(--text-main)] focus:ring-1 focus:ring-[var(--accent)] outline-none"
+              className={SELECT_CHIP}
             >
               <option value="">Todas</option>
               {ufs.map((u) => <option key={u} value={u}>{u}</option>)}
@@ -336,43 +313,7 @@ const BuscaPessoas = () => {
         )}
       </div>
 
-      {paginas > 1 && (
-        <nav aria-label="Páginas" className="flex flex-wrap items-center justify-center gap-1 text-[13px]">
-          <button
-            type="button"
-            disabled={pagina === 1}
-            onClick={() => irParaPagina(pagina - 1)}
-            className="px-3 py-1.5 rounded-md font-semibold text-[var(--accent)] hover:bg-[var(--nav-active)] disabled:opacity-40 disabled:hover:bg-transparent"
-          >
-            Anterior
-          </button>
-          {numerosDePagina(pagina, paginas).map((n, i) =>
-            n === "…" ? (
-              <span key={`r${i}`} className="px-2 text-[var(--text-muted)]">…</span>
-            ) : (
-              <button
-                key={n}
-                type="button"
-                onClick={() => irParaPagina(n)}
-                aria-current={n === pagina ? "page" : undefined}
-                className={`min-w-9 px-2 py-1.5 rounded-md font-semibold tabular-nums ${
-                  n === pagina ? "bg-[var(--accent)] text-white" : "text-[var(--text-muted)] hover:bg-[var(--nav-active)] hover:text-[var(--accent)]"
-                }`}
-              >
-                {n}
-              </button>
-            )
-          )}
-          <button
-            type="button"
-            disabled={pagina >= paginas}
-            onClick={() => irParaPagina(pagina + 1)}
-            className="px-3 py-1.5 rounded-md font-semibold text-[var(--accent)] hover:bg-[var(--nav-active)] disabled:opacity-40 disabled:hover:bg-transparent"
-          >
-            Próximo
-          </button>
-        </nav>
-      )}
+      <Paginacao pagina={pagina} paginas={paginas} irPara={irParaPagina} />
     </div>
   );
 };
