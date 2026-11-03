@@ -2,7 +2,7 @@ import { ArrowRight, BookOpen, LayoutDashboard, FlaskConical } from "lucide-reac
 import { Link } from "react-router-dom";
 import { usePagina, useNumerosHome } from "../lib/conteudo";
 import { Markdown } from "../lib/markdown";
-import banner from "../assets/banner-bpf.jpg";
+import banner from "../assets/banner-bpf.webp";
 
 const Numero = ({ valor, rotulo }: { valor?: number; rotulo: string }) => (
   <div className="text-center px-4 py-7">
