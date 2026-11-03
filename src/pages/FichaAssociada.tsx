@@ -263,9 +263,10 @@ export const FichaAssociada = () => {
                     <p className="text-[15px] font-serif font-bold text-[var(--heading)] tabular-nums pt-0.5">
                       {g.ano === "s/d" ? "s/d" : g.ano}
                     </p>
-                    <ul className="space-y-3 border-l border-[var(--border)] pl-4">
+                    {/* uma linha entre as obras: citações longas emendavam e não se via onde uma acabava */}
+                    <ul className="divide-y divide-[var(--border)] border-l border-[var(--border)] pl-4">
                       {g.obras.map((o) => (
-                        <li key={o.id}>
+                        <li key={o.id} className="py-3 first:pt-0 last:pb-0">
                           <p className="text-[14px] text-[var(--text-main)] leading-relaxed">{o.citacao}</p>
                           <p className="mt-1 text-[12px] text-[var(--text-muted)]">
                             <span className="font-semibold text-[var(--accent)]">{rotuloTipo(o.tipo)}</span>
