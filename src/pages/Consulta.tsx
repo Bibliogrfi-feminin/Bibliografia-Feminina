@@ -1,18 +1,61 @@
-import { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
-import { Search, Download } from "lucide-react";
+import { useState, useEffect, useMemo, useRef, ReactNode } from "react";
+import { Link } from "react-router-dom";
+import { Search, Download, ChevronRight, X } from "lucide-react";
 import { baixarXlsx, baixarCsv, deRegistros } from "../lib/xlsx";
 import { getAssociadas, getObras, Associada, Obra, semAcento } from "../lib/base";
 import { BuscaObras } from "../components/BuscaObras";
 
 const POR_PAGINA = 15;
 
+const TITULACOES = [
+  { id: "", rotulo: "Todas" },
+  { id: "livre_docente", rotulo: "Livre-docente" },
+  { id: "doutora", rotulo: "Doutora" },
+  { id: "mestre", rotulo: "Mestre" },
+  { id: "especialista", rotulo: "Especialista" },
+] as const;
+
 /**
- * Consulta de pessoas sobre a base estática.
+ * Ligado, o chip mostra só quem tem; desligado, não filtra. O "só quem NÃO
+ * é do IBDP" dos antigos seletores Sim/Não saiu: quase ninguém o usava, e
+ * cinco seletores iguais pesavam mais que a própria busca.
+ */
+const FLAGS = [
+  { id: "ibdp", rotulo: "IBDP", tem: (a: Associada) => a.ibdp },
+  { id: "abep", rotulo: "ABEP", tem: (a: Associada) => a.abep },
+  { id: "docente", rotulo: "Docente", tem: (a: Associada) => a.leciona },
+  { id: "ranking", rotulo: "Ranking 40+", tem: (a: Associada) => a.ranking40 },
+] as const;
+
+type IdFlag = (typeof FLAGS)[number]["id"];
+
+const Chip = ({ ativo, onClick, children }: { ativo: boolean; onClick: () => void; children: ReactNode }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    aria-pressed={ativo}
+    className={`px-3.5 py-1.5 rounded-full text-[13px] font-semibold border transition-colors whitespace-nowrap ${
+      ativo
+        ? "bg-[var(--accent)] text-white border-transparent"
+        : "bg-white text-[var(--text-muted)] border-[var(--border)] hover:text-[var(--accent)] hover:border-[var(--heading)]"
+    }`}
+  >
+    {children}
+  </button>
+);
+
+/** 1 … 4 5 6 … 26: a página atual com vizinhas, mais as pontas */
+function numerosDePagina(atual: number, total: number): (number | "…")[] {
+  const set = new Set([1, total, atual - 1, atual, atual + 1].filter((n) => n >= 1 && n <= total));
+  const ordem = [...set].sort((a, b) => a - b);
+  return ordem.flatMap((n, i) => (i > 0 && n - ordem[i - 1] > 1 ? ["…" as const, n] : [n]));
+}
+
+/**
+ * Consulta de pessoas.
  *
  * A lista inteira são 66 KB comprimidos, então filtrar e paginar no
- * navegador sai mais rápido do que ir ao servidor a cada tecla — e o site
- * público deixa de depender do banco.
+ * navegador sai mais rápido do que ir ao servidor a cada tecla.
  */
 const BuscaPessoas = () => {
   const [todas, setTodas] = useState<Associada[]>([]);
@@ -22,25 +65,21 @@ const BuscaPessoas = () => {
   const [busca, setBusca] = useState("");
   const [pagina, setPagina] = useState(1);
   const [uf, setUf] = useState("");
-  const [ibdp, setIbdp] = useState("");
-  const [abep, setAbep] = useState("");
-  const [docente, setDocente] = useState("");
-  const [ranking, setRanking] = useState("");
+  const [flags, setFlags] = useState<Set<IdFlag>>(new Set());
   const [formacao, setFormacao] = useState("");
+  const topoResultados = useRef<HTMLDivElement>(null);
 
   /**
    * A busca também alcança o conteúdo das obras: quem procura "coisa
    * julgada" quer as autoras que escreveram sobre isso, não só quem tem
    * essas palavras no nome.
    *
-   * A bibliografia pesa 441 KB contra os 66 KB da lista de pessoas, então
-   * só é baixada quando alguém realmente busca — e uma vez só. Até ela
-   * chegar, a busca por nome já responde.
+   * A bibliografia pesa bem mais que a lista de pessoas, então só é
+   * baixada quando alguém realmente busca — e uma vez só. Até ela chegar,
+   * a busca por nome já responde.
    */
   const [obras, setObras] = useState<Obra[] | null>(null);
   const [buscandoObras, setBuscandoObras] = useState(false);
-
-  const navigate = useNavigate();
 
   useEffect(() => {
     getAssociadas()
@@ -71,6 +110,12 @@ const BuscaPessoas = () => {
     return m;
   }, [obras, busca]);
 
+  /** só os estados que existem na base, em vez de um campo de texto livre */
+  const ufs = useMemo(
+    () => [...new Set(todas.map((a) => (a.uf ?? "").toUpperCase()).filter(Boolean))].sort(),
+    [todas]
+  );
+
   const filtradas = useMemo(() => {
     const termo = semAcento(busca.trim());
     return todas.filter((a) => {
@@ -79,24 +124,36 @@ const BuscaPessoas = () => {
         // entra por dado próprio ou por ter obra sobre o assunto
         if (!alvo.includes(termo) && !acertosPorAutora.has(a.id)) return false;
       }
-      if (uf && (a.uf ?? "").toUpperCase() !== uf.toUpperCase()) return false;
-      if (ibdp !== "" && a.ibdp !== (ibdp === "true")) return false;
-      if (abep !== "" && a.abep !== (abep === "true")) return false;
-      if (docente !== "" && a.leciona !== (docente === "true")) return false;
-      if (ranking !== "" && a.ranking40 !== (ranking === "true")) return false;
+      if (uf && (a.uf ?? "").toUpperCase() !== uf) return false;
+      for (const f of FLAGS) if (flags.has(f.id) && !f.tem(a)) return false;
       if (formacao === "doutora" && !a.doutora) return false;
       if (formacao === "mestre" && !a.mestre) return false;
       if (formacao === "especialista" && !a.especialista) return false;
       if (formacao === "livre_docente" && !a.livreDocente) return false;
       return true;
     });
-  }, [todas, busca, uf, ibdp, abep, docente, ranking, formacao, acertosPorAutora]);
+  }, [todas, busca, uf, flags, formacao, acertosPorAutora]);
 
   // qualquer mudança de critério volta para a primeira página
-  useEffect(() => { setPagina(1); }, [busca, uf, ibdp, abep, docente, ranking, formacao]);
+  useEffect(() => { setPagina(1); }, [busca, uf, flags, formacao]);
 
   const paginas = Math.ceil(filtradas.length / POR_PAGINA) || 1;
   const visiveis = filtradas.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA);
+  const temFiltro = Boolean(busca || uf || flags.size || formacao);
+
+  const alternarFlag = (id: IdFlag) =>
+    setFlags((atual) => {
+      const novo = new Set(atual);
+      novo.has(id) ? novo.delete(id) : novo.add(id);
+      return novo;
+    });
+
+  const limpar = () => { setBusca(""); setUf(""); setFlags(new Set()); setFormacao(""); };
+
+  const irParaPagina = (n: number) => {
+    setPagina(n);
+    topoResultados.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   const exportar = async (formato: "csv" | "xlsx") => {
     if (filtradas.length === 0) { alert("Nenhum dado para exportar"); return; }
@@ -127,185 +184,195 @@ const BuscaPessoas = () => {
     }
   };
 
-  const selo = (v: boolean) =>
-    v ? "bg-[var(--success-bg)] text-[var(--success)] border-transparent"
-      : "bg-white text-[var(--text-muted)] border-[var(--border)]";
-
-  const campoCls =
-    "w-full px-3 py-2 bg-white border border-[var(--border)] rounded-lg text-sm focus:ring-1 focus:ring-[var(--accent)] outline-none";
+  const rotuloFiltro = "text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]";
 
   return (
     <div className="space-y-5">
-      <div className="bg-white p-5 rounded-xl border border-[var(--border)]">
-        <form onSubmit={(e) => e.preventDefault()} className="flex flex-wrap gap-3 items-end">
-          <div className="flex-1 min-w-[240px]">
-            <label className="block text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1">Busca</label>
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Nome, instituição ou assunto de uma obra…"
-                className={`${campoCls} pl-10`}
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-              />
-              <Search className="w-4 h-4 text-[var(--text-muted)] absolute left-3 top-3" />
-            </div>
-            <p className="text-[11px] text-[var(--text-muted)] mt-1.5 h-4">
-              {buscandoObras
-                ? "buscando também nas obras…"
-                : busca.trim().length >= 3 && acertosPorAutora.size > 0
-                ? `${acertosPorAutora.size} ${acertosPorAutora.size === 1 ? "autora escreveu" : "autoras escreveram"} sobre isso`
-                : ""}
-            </p>
+      <form onSubmit={(e) => e.preventDefault()} className="bg-white p-5 md:p-6 rounded-xl border border-[var(--border)] space-y-5">
+        <div>
+          <div className="relative">
+            <Search className="w-5 h-5 text-[var(--text-muted)] absolute left-4 top-1/2 -translate-y-1/2" />
+            <input
+              type="search"
+              aria-label="Buscar processualistas"
+              placeholder="Nome, instituição ou tema de uma obra…"
+              className="w-full pl-12 pr-4 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[15px] focus:bg-white focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent outline-none"
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+            />
           </div>
+          <p className="text-[12px] text-[var(--text-muted)] mt-2 min-h-4">
+            {buscandoObras
+              ? "Buscando também nas obras…"
+              : busca.trim().length >= 3 && acertosPorAutora.size > 0
+              ? `${acertosPorAutora.size} ${acertosPorAutora.size === 1 ? "autora escreveu" : "autoras escreveram"} sobre isso.`
+              : ""}
+          </p>
+        </div>
 
-          <div className="w-20">
-            <label className="block text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1">UF</label>
-            <input type="text" placeholder="SP" maxLength={2} className={`${campoCls} uppercase`}
-              value={uf} onChange={(e) => setUf(e.target.value.toUpperCase())} />
-          </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`${rotuloFiltro} mr-1 w-full sm:w-auto`}>Titulação</span>
+          {TITULACOES.map((t) => (
+            <Chip key={t.id} ativo={formacao === t.id} onClick={() => setFormacao(t.id)}>{t.rotulo}</Chip>
+          ))}
+        </div>
 
-          <div className="w-28">
-            <label className="block text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1">IBDP</label>
-            <select value={ibdp} onChange={(e) => setIbdp(e.target.value)} className={campoCls}>
-              <option value="">Todos</option><option value="true">Sim</option><option value="false">Não</option>
-            </select>
-          </div>
-
-          <div className="w-28">
-            <label className="block text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1">ABEP</label>
-            <select value={abep} onChange={(e) => setAbep(e.target.value)} className={campoCls}>
-              <option value="">Todos</option><option value="true">Sim</option><option value="false">Não</option>
-            </select>
-          </div>
-
-          <div className="w-32">
-            <label className="block text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1">Docente</label>
-            <select value={docente} onChange={(e) => setDocente(e.target.value)} className={campoCls}>
-              <option value="">Todos</option><option value="true">Sim</option><option value="false">Não</option>
-            </select>
-          </div>
-
-          <div className="w-32">
-            <label className="block text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1">Ranking 40+</label>
-            <select value={ranking} onChange={(e) => setRanking(e.target.value)} className={campoCls}>
-              <option value="">Todos</option><option value="true">Sim</option><option value="false">Não</option>
-            </select>
-          </div>
-
-          <div className="w-40">
-            <label className="block text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1">Titulação</label>
-            <select value={formacao} onChange={(e) => setFormacao(e.target.value)} className={campoCls}>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`${rotuloFiltro} mr-1 w-full sm:w-auto`}>Mostrar só</span>
+          {FLAGS.map((f) => (
+            <Chip key={f.id} ativo={flags.has(f.id)} onClick={() => alternarFlag(f.id)}>{f.rotulo}</Chip>
+          ))}
+          <label className="flex items-center gap-2 sm:ml-3">
+            <span className={rotuloFiltro}>UF</span>
+            <select
+              value={uf}
+              onChange={(e) => setUf(e.target.value)}
+              className="px-3 py-1.5 bg-white border border-[var(--border)] rounded-full text-[13px] font-semibold text-[var(--text-main)] focus:ring-1 focus:ring-[var(--accent)] outline-none"
+            >
               <option value="">Todas</option>
-              <option value="doutora">Doutora</option>
-              <option value="mestre">Mestre</option>
-              <option value="especialista">Especialista</option>
-              <option value="livre_docente">Livre-Docente</option>
+              {ufs.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
-          </div>
+          </label>
+          {temFiltro && (
+            <button
+              type="button"
+              onClick={limpar}
+              className="ml-auto inline-flex items-center gap-1 text-[13px] font-semibold text-[var(--accent)] hover:text-[var(--heading)]"
+            >
+              <X className="w-4 h-4" /> Limpar filtros
+            </button>
+          )}
+        </div>
+      </form>
 
-          <div className="ml-auto flex gap-2">
-            <button type="button" onClick={() => exportar("csv")}
-              className="flex items-center px-3.5 py-2 bg-white border border-[var(--border)] text-[var(--text-main)] text-sm font-semibold rounded-lg hover:bg-[var(--row-hover)] transition">
-              <Download className="w-4 h-4 mr-2 text-[var(--text-muted)]" /> CSV
+      {/* scroll-mt: ao trocar de página, a lista para abaixo da barra de navegação */}
+      <div ref={topoResultados} className="scroll-mt-24 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-[14px] text-[var(--text-muted)]">
+          <span className="font-semibold text-[var(--text-main)] tabular-nums">{filtradas.length.toLocaleString("pt-BR")}</span>{" "}
+          {filtradas.length === 1 ? "processualista" : "processualistas"}
+          {filtradas.length !== todas.length && ` de ${todas.length.toLocaleString("pt-BR")}`}
+        </p>
+        <div className="flex items-center gap-1 text-[13px]">
+          <span className="text-[var(--text-muted)] mr-1">Exportar</span>
+          {(["csv", "xlsx"] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => exportar(f)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-semibold text-[var(--accent)] hover:bg-[var(--nav-active)]"
+            >
+              <Download className="w-3.5 h-3.5" /> {f === "csv" ? "CSV" : "Excel"}
             </button>
-            <button type="button" onClick={() => exportar("xlsx")}
-              className="flex items-center px-3.5 py-2 bg-[var(--accent)] text-white text-sm font-semibold rounded-lg hover:bg-[var(--accent-hover)] transition">
-              <Download className="w-4 h-4 mr-2" /> Excel
-            </button>
-          </div>
-        </form>
+          ))}
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-[var(--border)] overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs whitespace-nowrap">
-            <thead className="bg-[var(--bg)] text-[11px] uppercase tracking-wider text-[var(--text-muted)] border-b border-[var(--border)]">
-              <tr>
-                <th className="px-6 py-3 font-semibold">Nome</th>
-                <th className="px-4 py-3 font-semibold">Atuação</th>
-                <th className="px-4 py-3 font-semibold text-center">UF</th>
-                <th className="px-4 py-3 font-semibold text-center">IBDP</th>
-                <th className="px-4 py-3 font-semibold text-center">ABEP</th>
-                <th className="px-4 py-3 font-semibold">Titulação</th>
-                <th className="px-6 py-3 font-semibold text-right">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--border)]">
-              {carregando ? (
-                <tr><td colSpan={7} className="text-center py-10 text-[var(--text-muted)]">Carregando…</td></tr>
-              ) : erro ? (
-                <tr><td colSpan={7} className="text-center py-10 text-[var(--error)]">{erro}</td></tr>
-              ) : visiveis.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-10 text-[var(--text-muted)]">Nenhum registro encontrado.</td></tr>
-              ) : (
-                visiveis.map((a) => (
-                  <tr key={a.id} className="hover:bg-[var(--row-hover)] transition-colors">
-                    <td className="px-6 py-4 font-semibold text-[var(--text-main)]">
-                      {a.nome}
-                      {a.incompleto && (
-                        <span className="ml-2 px-1.5 py-0.5 text-[9px] rounded bg-[var(--warning-bg)] text-[var(--warning)] font-bold uppercase">
-                          incompleto
-                        </span>
-                      )}
-                      {/* diz por que a pessoa apareceu quando o termo não
-                          está no nome dela, mas nas obras que escreveu */}
-                      {acertosPorAutora.has(a.id) && (
-                        <span className="ml-2 px-1.5 py-0.5 text-[9px] rounded bg-[var(--nav-active)] text-[var(--accent)] font-bold uppercase whitespace-nowrap">
-                          {acertosPorAutora.get(a.id)}{" "}
-                          {acertosPorAutora.get(a.id) === 1 ? "obra" : "obras"}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-4 text-[var(--text-muted)]">{a.atuacao ?? "—"}</td>
-                    <td className="px-4 py-4 text-center text-[var(--text-muted)]">{a.uf ?? "—"}</td>
-                    <td className="px-4 py-4 text-center">
-                      <span className={`inline-flex px-2 py-0.5 text-[10px] rounded border font-bold uppercase ${selo(a.ibdp)}`}>
-                        {a.ibdp ? "Sim" : "Não"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4 text-center">
-                      <span className={`inline-flex px-2 py-0.5 text-[10px] rounded border font-bold uppercase ${selo(a.abep)}`}>
-                        {a.abep ? "Sim" : "Não"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4 text-[var(--text-muted)]">
-                      {[a.livreDocente && "Livre-doc.", a.doutora && "Doutora", a.mestre && "Mestre", a.especialista && "Espec."]
-                        .filter(Boolean).join(" · ") || "—"}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <button
-                        onClick={() => navigate(`/consulta/${a.id}`)}
-                        className="px-3 py-1.5 text-xs font-semibold text-[var(--accent)] border border-[var(--accent)] rounded-lg hover:bg-[var(--accent)] hover:text-white transition"
-                      >
-                        Ver detalhes
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="p-4 border-t border-[var(--border)] flex items-center justify-between text-xs text-[var(--text-muted)]">
-          <div>
-            {filtradas.length.toLocaleString("pt-BR")} {filtradas.length === 1 ? "registro" : "registros"}
-            {filtradas.length !== todas.length && ` (de ${todas.length.toLocaleString("pt-BR")})`}
-            {" · "}página <span className="font-semibold text-[var(--text-main)]">{pagina}</span> de {paginas}
+        {carregando ? (
+          <p className="text-center py-12 text-[var(--text-muted)]">Carregando…</p>
+        ) : erro ? (
+          <p className="text-center py-12 text-[var(--error)]">{erro}</p>
+        ) : visiveis.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-[var(--text-muted)]">Nenhuma processualista encontrada.</p>
+            {temFiltro && (
+              <button type="button" onClick={limpar} className="mt-3 text-[13px] font-semibold text-[var(--accent)] hover:text-[var(--heading)]">
+                Limpar filtros
+              </button>
+            )}
           </div>
-          <div className="flex gap-1">
-            <button disabled={pagina === 1} onClick={() => setPagina(pagina - 1)}
-              className="px-3 py-1 bg-white border border-[var(--border)] rounded hover:bg-[var(--row-hover)] disabled:opacity-40">
-              Anterior
-            </button>
-            <button disabled={pagina >= paginas} onClick={() => setPagina(pagina + 1)}
-              className="px-3 py-1 bg-white border border-[var(--border)] rounded hover:bg-[var(--row-hover)] disabled:opacity-40">
-              Próximo
-            </button>
-          </div>
-        </div>
+        ) : (
+          <ul className="divide-y divide-[var(--border)]">
+            {visiveis.map((a) => {
+              const titulos = [a.livreDocente && "Livre-docente", a.doutora && "Doutora", a.mestre && "Mestre", a.especialista && "Especialista"]
+                .filter(Boolean) as string[];
+              const entidades = [a.ibdp && "IBDP", a.abep && "ABEP", a.ranking40 && "Ranking 40+"].filter(Boolean) as string[];
+              const obrasAchadas = acertosPorAutora.get(a.id);
+              return (
+                <li key={a.id}>
+                  {/* um link de verdade: Ctrl+clique abre a ficha em outra aba */}
+                  <Link
+                    to={`/consulta/${a.id}`}
+                    className="group flex items-center gap-4 px-5 py-4 hover:bg-[var(--row-hover)] transition-colors focus-visible:outline-2 focus-visible:outline-[var(--accent)] focus-visible:-outline-offset-2"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="font-semibold text-[15px] text-[var(--text-main)] group-hover:text-[var(--accent)]">{a.nome}</span>
+                        {a.incompleto && (
+                          <span className="px-1.5 py-0.5 text-[10px] rounded bg-[var(--warning-bg)] text-[var(--warning)] font-bold uppercase">
+                            incompleto
+                          </span>
+                        )}
+                        {/* diz por que a pessoa apareceu quando o termo não
+                            está no nome dela, mas nas obras que escreveu */}
+                        {obrasAchadas && (
+                          <span className="px-1.5 py-0.5 text-[10px] rounded bg-[var(--highlight-bg)] text-[var(--highlight)] font-bold uppercase whitespace-nowrap">
+                            {obrasAchadas} {obrasAchadas === 1 ? "obra" : "obras"} sobre o tema
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[13px] text-[var(--text-muted)] mt-0.5">
+                        {[a.atuacao, a.uf].filter(Boolean).join(" · ") || "Atuação não informada"}
+                      </p>
+                      {(titulos.length > 0 || entidades.length > 0) && (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                          {titulos.map((t) => (
+                            <span key={t} className="px-2 py-0.5 rounded text-[11px] font-semibold bg-[var(--nav-active)] text-[var(--accent)]">{t}</span>
+                          ))}
+                          {entidades.length > 0 && (
+                            <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] ml-1">
+                              {entidades.join(" · ")}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <ChevronRight className="w-5 h-5 shrink-0 text-[var(--border)] group-hover:text-[var(--accent)] transition-colors" />
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
+
+      {paginas > 1 && (
+        <nav aria-label="Páginas" className="flex flex-wrap items-center justify-center gap-1 text-[13px]">
+          <button
+            type="button"
+            disabled={pagina === 1}
+            onClick={() => irParaPagina(pagina - 1)}
+            className="px-3 py-1.5 rounded-md font-semibold text-[var(--accent)] hover:bg-[var(--nav-active)] disabled:opacity-40 disabled:hover:bg-transparent"
+          >
+            Anterior
+          </button>
+          {numerosDePagina(pagina, paginas).map((n, i) =>
+            n === "…" ? (
+              <span key={`r${i}`} className="px-2 text-[var(--text-muted)]">…</span>
+            ) : (
+              <button
+                key={n}
+                type="button"
+                onClick={() => irParaPagina(n)}
+                aria-current={n === pagina ? "page" : undefined}
+                className={`min-w-9 px-2 py-1.5 rounded-md font-semibold tabular-nums ${
+                  n === pagina ? "bg-[var(--accent)] text-white" : "text-[var(--text-muted)] hover:bg-[var(--nav-active)] hover:text-[var(--accent)]"
+                }`}
+              >
+                {n}
+              </button>
+            )
+          )}
+          <button
+            type="button"
+            disabled={pagina >= paginas}
+            onClick={() => irParaPagina(pagina + 1)}
+            className="px-3 py-1.5 rounded-md font-semibold text-[var(--accent)] hover:bg-[var(--nav-active)] disabled:opacity-40 disabled:hover:bg-transparent"
+          >
+            Próximo
+          </button>
+        </nav>
+      )}
     </div>
   );
 };
