@@ -39,6 +39,10 @@ const gravou = async (q: any, acao: string): Promise<boolean> => {
   return true;
 };
 
+/** campos da associada que, uma vez preenchidos, não podem ser apagados */
+const OBRIGATORIOS = ["nome", "email", "atuacao_profissional", "link_lattes", "status_registro"];
+const preenchido = (v: unknown) => v != null && String(v).trim() !== "";
+
 const chunk = <T,>(arr: T[], size: number): T[][] => {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
@@ -70,6 +74,7 @@ const AssociadasTab = () => {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<any>(null);
   const [editForm, setEditForm] = useState<any>({});
+  const [esvaziados, setEsvaziados] = useState<string[]>([]);
 
   const load = async () => {
     setLoading(true);
@@ -91,11 +96,20 @@ const AssociadasTab = () => {
     if (await gravou(supabase.from("associadas").update({ deletado_em: new Date().toISOString() }).eq("id", id), "excluir o registro")) load();
   };
 
-  const openEdit = (row: any) => { setEditing(row); setEditForm({ ...row }); };
+  const openEdit = (row: any) => { setEditing(row); setEditForm({ ...row }); setEsvaziados([]); };
   const closeEdit = () => setEditing(null);
 
   const saveEdit = async () => {
+    // quem já tinha o dado não pode perdê-lo; quem já estava sem continua podendo
+    // ser corrigida em outros campos (são dezenas de registros incompletos)
+    const faltando = OBRIGATORIOS.filter(k => preenchido(editing[k]) && !preenchido(editForm[k]));
+    setEsvaziados(faltando);
+    if (faltando.length) return;
+
     const { id, ...payload } = editForm;
+    for (const k of Object.keys(payload)) {
+      if (typeof payload[k] === "string") payload[k] = payload[k].trim() || null;
+    }
     if (!(await gravou(supabase.from("associadas").update(payload).eq("id", id), "salvar a edição"))) return;
     setEditing(null);
     load();
@@ -169,9 +183,10 @@ const AssociadasTab = () => {
               { label: "Link Lattes", key: "link_lattes" },
             ].map(f => (
               <div key={f.key}>
-                <label className="block text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1">{f.label}</label>
-                <input className="w-full px-3 py-2 border border-[var(--border)] rounded-lg text-sm outline-none focus:ring-1 focus:ring-[var(--accent)]"
+                <label className="block text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1">{f.label}{OBRIGATORIOS.includes(f.key) && " *"}</label>
+                <input className={`w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-1 focus:ring-[var(--accent)] ${esvaziados.includes(f.key) ? "border-[var(--error)]" : "border-[var(--border)]"}`}
                   value={editForm[f.key] || ""} onChange={e => setEditForm({ ...editForm, [f.key]: e.target.value })} />
+                {esvaziados.includes(f.key) && <p className="mt-1 text-[11px] text-[var(--error)]">Já tinha um valor e não pode ficar vazio.</p>}
               </div>
             ))}
             <div>
