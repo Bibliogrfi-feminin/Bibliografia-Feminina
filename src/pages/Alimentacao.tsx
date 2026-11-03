@@ -58,9 +58,11 @@ export const CadastroIndividual = () => {
       if (error) throw error;
 
       if (vinculos.length > 0) {
-        await supabase.from("vinculos_docentes").insert(
+        const { error: erroVinculos } = await supabase.from("vinculos_docentes").insert(
           vinculos.map((v: any) => ({ ...v, associada_id: inserted.id }))
         );
+        // a processualista já foi gravada: avisar que só os vínculos ficaram de fora
+        if (erroVinculos) throw new Error(`a processualista foi salva, mas os vínculos não (${erroVinculos.message})`);
       }
 
       alert("Processualista salva com sucesso!");
@@ -87,9 +89,9 @@ export const CadastroIndividual = () => {
             <section>
               <h3 className="font-serif italic text-lg text-[var(--text-main)] mb-4 border-b pb-2">Dados Pessoais e Atuação Profissional</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div><label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Nome Completo *</label><input required {...register("nome")} className="w-full px-3 py-2 border rounded-lg focus:ring-1 focus:ring-[var(--accent)] outline-none" /></div>
-                <div><label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Email</label><input type="email" {...register("email")} className="w-full px-3 py-2 border rounded-lg focus:ring-1 focus:ring-[var(--accent)] outline-none" /></div>
-                <div><label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Qual a atuação profissional?</label><input {...register("atuacao_profissional")} className="w-full px-3 py-2 border rounded-lg focus:ring-1 focus:ring-[var(--accent)] outline-none" /></div>
+                <div><label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Nome Completo *</label><input required pattern=".*\S.*" title="Não pode ficar em branco" {...register("nome")} className="w-full px-3 py-2 border rounded-lg focus:ring-1 focus:ring-[var(--accent)] outline-none" /></div>
+                <div><label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Email *</label><input type="email" required {...register("email")} className="w-full px-3 py-2 border rounded-lg focus:ring-1 focus:ring-[var(--accent)] outline-none" /></div>
+                <div><label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Qual a atuação profissional? *</label><input required pattern=".*\S.*" title="Não pode ficar em branco" {...register("atuacao_profissional")} className="w-full px-3 py-2 border rounded-lg focus:ring-1 focus:ring-[var(--accent)] outline-none" /></div>
                 <div><label className="block text-xs font-bold text-[var(--text-muted)] mb-1">UF da atuação principal</label><input {...register("uf_atuacao")} maxLength={2} className="w-full px-3 py-2 border rounded-lg focus:ring-1 focus:ring-[var(--accent)] outline-none" /></div>
               </div>
             </section>
@@ -101,7 +103,7 @@ export const CadastroIndividual = () => {
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" {...register("abep")} /> É associada da ABEP?</label>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div><label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Link do currículo Lattes</label><input {...register("link_lattes")} className="w-full px-3 py-2 border rounded-lg focus:ring-1 focus:ring-[var(--accent)] outline-none" /></div>
+                <div><label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Link do currículo Lattes *</label><input required pattern=".*\S.*" title="Não pode ficar em branco" {...register("link_lattes")} className="w-full px-3 py-2 border rounded-lg focus:ring-1 focus:ring-[var(--accent)] outline-none" /></div>
                 <div><label className="block text-xs font-bold text-[var(--text-muted)] mb-1">Data da última atualização do Lattes</label><input {...register("data_atualizacao_lattes")} type="date" className="w-full px-3 py-2 border rounded-lg focus:ring-1 focus:ring-[var(--accent)] outline-none" /></div>
               </div>
             </section>

@@ -35,16 +35,25 @@ migrações daquela época seguem em `supabase/migracoes-historicas/`, só para 
 | Produção | `jljqkxkncubvcxyvrtdl` |
 | Ambiente de Teste | `xiswismliggsmzltsavb` |
 
-A CLI fala com um projeto por vez — o do último `supabase link`. Teste a migração no
-Ambiente de Teste antes de levá-la à produção:
+Teste a migração no Ambiente de Teste antes de levá-la à produção. `--remote=<ref>`
+escolhe o projeto sem depender do último `supabase link`:
 
 ```bash
-npx supabase link --project-ref xiswismliggsmzltsavb
-npx supabase db push
+npx supabase db push --remote=xiswismliggsmzltsavb --dry-run
+npx supabase db push --remote=xiswismliggsmzltsavb
 # conferiu? então:
-npx supabase link --project-ref jljqkxkncubvcxyvrtdl
-npx supabase db push
+npx supabase db push --remote=jljqkxkncubvcxyvrtdl
 ```
+
+Para usar o site contra o Ambiente de Teste, crie um `.env.teste` (mesmo formato do
+`.env`, com a URL e a chave anon do teste) e rode `npm run dev -- --mode teste`. A base
+de teste começa vazia: `supabase/seed.sql`, colado no SQL Editor do teste, cria
+processualistas, obras e textos fictícios. Ele se recusa a rodar se achar mais de 50
+associadas — o sinal de que é a produção.
+
+O cadastro aberto do Supabase Auth fica **desligado** nos dois projetos: todo usuário
+novo vira ANOTADOR e pode gravar na base. Contas só pela tela de Usuários, que usa a
+Edge Function `admin-users`.
 
 > Funções que só a Edge Function pode chamar precisam de `revoke execute ... from anon,
 > authenticated` explícito: num projeto novo o Supabase concede `EXECUTE` a esses papéis

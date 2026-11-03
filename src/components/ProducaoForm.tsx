@@ -39,13 +39,12 @@ export const ProducaoForm = ({ associadaId, onSuccess, initialData }: ProducaoFo
       // Coerce numeric field
       if (payload.ano_publicacao) payload.ano_publicacao = Number(payload.ano_publicacao);
 
-      let error;
-      if (initialData?.id) {
-        ({ error } = await supabase.from("producoes_bibliograficas").update(payload).eq("id", initialData.id));
-      } else {
-        ({ error } = await supabase.from("producoes_bibliograficas").insert(payload));
-      }
+      // .select: um UPDATE barrado pelo RLS não dá erro, só volta vazio
+      const { data: gravadas, error } = initialData?.id
+        ? await supabase.from("producoes_bibliograficas").update(payload).eq("id", initialData.id).select("id")
+        : await supabase.from("producoes_bibliograficas").insert(payload).select("id");
       if (error) throw error;
+      if (!gravadas?.length) throw new Error("nada foi gravado. Você pode não ter permissão para isso.");
 
       alert("Produção bibliográfica salva com sucesso!");
       if (!initialData) reset();
