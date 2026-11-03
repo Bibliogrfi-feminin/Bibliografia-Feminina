@@ -2,7 +2,22 @@ import { ReactNode } from "react";
 
 /** peças comuns às duas abas da Consulta (processualistas e obras) */
 
-export const ROTULO_FILTRO = "text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]";
+/**
+ * O tipo_obra do banco vem com caixa misturada ("Anais de Eventos",
+ * "Capitulo de Livro", sem acento). Na tela, todos em caixa de frase.
+ */
+const ROTULOS_TIPO: Record<string, string> = {
+  "Capitulo de Livro": "Capítulo de livro",
+  "Anais de Eventos": "Anais de eventos",
+  "Coluna em Jornais e Sites": "Coluna em jornais e sites",
+  "Org. ou Coord.": "Organização ou coordenação",
+  "Dissertação de Mestrado": "Dissertação de mestrado",
+  "Tese de Doutorado": "Tese de doutorado",
+  "Tese de Livre-Docência": "Tese de livre-docência",
+};
+export const rotuloTipo = (t: string) => ROTULOS_TIPO[t] ?? t;
+
+export const ROTULO_FILTRO ="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]";
 
 export const Chip = ({ ativo, onClick, children }: { ativo: boolean; onClick: () => void; children: ReactNode }) => (
   <button

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, useDeferredValue } from "react";
 import { Link } from "react-router-dom";
 import { Search, Loader2, ExternalLink, X } from "lucide-react";
 import { getObras, getAssociadas, Obra, Associada, semAcento } from "../lib/base";
-import { Chip, Paginacao, ROTULO_FILTRO, SELECT_CHIP } from "./ConsultaUI";
+import { Chip, Paginacao, ROTULO_FILTRO, SELECT_CHIP, rotuloTipo } from "./ConsultaUI";
 
 /**
  * Busca por obra: quem procura "coisa julgada" chega na lista de trabalhos
@@ -29,9 +29,6 @@ const TIPOS = [
   // derivados da aba 1: a titulação também é obra
   "Dissertação de Mestrado", "Tese de Doutorado", "Tese de Livre-Docência",
 ];
-
-/** o enum do banco não tem acento em "Capitulo"; o rótulo tem */
-const rotuloTipo = (t: string) => (t === "Capitulo de Livro" ? "Capítulo de livro" : t);
 
 /** destaca o trecho procurado dentro da citação, ignorando acento e caixa */
 function Destacado({ texto, termo }: { texto: string; termo: string }) {
