@@ -58,9 +58,11 @@ export const CadastroIndividual = () => {
       if (error) throw error;
 
       if (vinculos.length > 0) {
-        await supabase.from("vinculos_docentes").insert(
+        const { error: erroVinculos } = await supabase.from("vinculos_docentes").insert(
           vinculos.map((v: any) => ({ ...v, associada_id: inserted.id }))
         );
+        // a processualista já foi gravada: avisar que só os vínculos ficaram de fora
+        if (erroVinculos) throw new Error(`a processualista foi salva, mas os vínculos não (${erroVinculos.message})`);
       }
 
       alert("Processualista salva com sucesso!");

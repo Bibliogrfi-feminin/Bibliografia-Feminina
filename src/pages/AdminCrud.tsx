@@ -25,6 +25,20 @@ const statusColors: Record<string, string> = {
   DUPLICADO: "bg-[var(--error-bg)] text-[var(--error)]",
 };
 
+/**
+ * Uma escrita barrada pelo RLS não dá erro: o UPDATE/DELETE só não acha
+ * linha. Pedir as linhas de volta é o único jeito de saber que gravou —
+ * sem isso, a tela fechava como se tivesse salvo e nada mudava.
+ */
+const gravou = async (q: any, acao: string): Promise<boolean> => {
+  const { data, error } = await q.select("id");
+  if (error || !data?.length) {
+    alert(`Não foi possível ${acao}. ${error ? error.message : "Você pode não ter permissão para isso."}`);
+    return false;
+  }
+  return true;
+};
+
 const chunk = <T,>(arr: T[], size: number): T[][] => {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
@@ -59,7 +73,8 @@ const AssociadasTab = () => {
 
   const load = async () => {
     setLoading(true);
-    let q = supabase.from("associadas").select("id,nome,email,ibdp,abep,status_registro,uf_atuacao,atuacao_profissional,leciona", { count: "exact" }).is("deletado_em", null).order("nome");
+    // todos os campos que o formulário de edição mostra, ou ele os exibe vazios
+    let q = supabase.from("associadas").select("id,nome,email,ibdp,abep,status_registro,uf_atuacao,atuacao_profissional,leciona,link_lattes,mestre,doutora,especialista,livre_docente", { count: "exact" }).is("deletado_em", null).order("nome");
     if (search) q = q.or(`nome.ilike.%${search}%,email.ilike.%${search}%`);
     const from = (page - 1) * LIMIT;
     q = q.range(from, from + LIMIT - 1);
@@ -73,8 +88,7 @@ const AssociadasTab = () => {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Excluir este registro?")) return;
-    await supabase.from("associadas").update({ deletado_em: new Date().toISOString() }).eq("id", id);
-    load();
+    if (await gravou(supabase.from("associadas").update({ deletado_em: new Date().toISOString() }).eq("id", id), "excluir o registro")) load();
   };
 
   const openEdit = (row: any) => { setEditing(row); setEditForm({ ...row }); };
@@ -82,7 +96,7 @@ const AssociadasTab = () => {
 
   const saveEdit = async () => {
     const { id, ...payload } = editForm;
-    await supabase.from("associadas").update(payload).eq("id", id);
+    if (!(await gravou(supabase.from("associadas").update(payload).eq("id", id), "salvar a edição"))) return;
     setEditing(null);
     load();
   };
@@ -222,14 +236,13 @@ const ProducoesTab = () => {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Excluir esta produção?")) return;
-    await supabase.from("producoes_bibliograficas").delete().eq("id", id);
-    load();
+    if (await gravou(supabase.from("producoes_bibliograficas").delete().eq("id", id), "excluir a produção")) load();
   };
 
   const saveEdit = async () => {
     const { id, associadas: _, ...payload } = editForm;
     if (payload.ano_publicacao) payload.ano_publicacao = Number(payload.ano_publicacao);
-    await supabase.from("producoes_bibliograficas").update(payload).eq("id", id);
+    if (!(await gravou(supabase.from("producoes_bibliograficas").update(payload).eq("id", id), "salvar a edição"))) return;
     setEditing(null);
     load();
   };
@@ -239,15 +252,17 @@ const ProducoesTab = () => {
       alert("Preencha autora, citação e ano."); return;
     }
     const payload = { ...newForm, ano_publicacao: Number(newForm.ano_publicacao) };
-    await supabase.from("producoes_bibliograficas").insert(payload);
+    if (!(await gravou(supabase.from("producoes_bibliograficas").insert(payload), "criar a produção"))) return;
     setShowNew(false);
     setNewForm({ tipo_obra: "Artigo", area_processo: "P. Civil", formato: "ELETRONICA", acesso_eletronica: "PUBLICA" });
     load();
   };
 
   const totalPages = Math.ceil(total / LIMIT);
-  const tiposObra = ["Artigo", "Livro", "Capitulo de Livro", "Anais de Eventos", "Coluna em Jornais e Sites"];
-  const areasProcesso = ["P. Civil", "P. Penal", "P. Trabalhista", "P. Tributario", "P. Constitucional", "Outros"];
+  // os valores de tipo_obra_enum e area_processo_enum; dissertações e teses
+  // ficam de fora porque são recriadas a partir da titulação
+  const tiposObra = ["Artigo", "Livro", "Capitulo de Livro", "Anais de Eventos", "Coluna em Jornais e Sites", "Org. ou Coord."];
+  const areasProcesso = ["P. Civil", "P. Penal", "P. Trabalhista", "P. Tributario", "P. Constitucional", "P. Administrativo", "Outros"];
 
   const ProducaoFields = ({ form, setForm }: { form: any; setForm: any }) => (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -399,13 +414,11 @@ const VinculosTab = () => {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Excluir este vínculo?")) return;
-    await supabase.from("vinculos_docentes").delete().eq("id", id);
-    load();
+    if (await gravou(supabase.from("vinculos_docentes").delete().eq("id", id), "excluir o vínculo")) load();
   };
 
   const toggleRanking = async (row: any) => {
-    await supabase.from("vinculos_docentes").update({ integra_ranking_40: !row.integra_ranking_40 }).eq("id", row.id);
-    load();
+    if (await gravou(supabase.from("vinculos_docentes").update({ integra_ranking_40: !row.integra_ranking_40 }).eq("id", row.id), "alterar o Ranking 40+")) load();
   };
 
   const totalPages = Math.ceil(total / LIMIT);
@@ -491,8 +504,7 @@ const NotasTab = () => {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Excluir esta nota?")) return;
-    await supabase.from("notas").delete().eq("id", id);
-    load();
+    if (await gravou(supabase.from("notas").delete().eq("id", id), "excluir a nota")) load();
   };
 
   const totalPages = Math.ceil(total / LIMIT);
