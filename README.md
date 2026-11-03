@@ -77,6 +77,13 @@ Home, Sobre, Metodologia e Quem Somos **não têm texto no código**: leem de `p
 e uma admin edita em **Administração → Textos do Site**, com prévia lado a lado. O que
 for publicado aparece no site na hora.
 
+Sobre, Metodologia e Quem Somos aparecem juntas em **O Projeto** (`/sobre`), uma seção
+para cada; `/metodologia` e `/quem-somos` levam à seção certa. O desenho sai dos títulos
+`## ` de cada texto: na Metodologia, um título no formato `## 1ª Etapa: Busca de Fontes`
+vira um passo numerado da linha do tempo, e os demais viram cartões. Cada bloco mostra só
+o primeiro parágrafo até a leitora abrir o resto — por isso vale abrir cada etapa com uma
+frase que a resuma.
+
 O markdown aceito é o mínimo necessário (`## título`, `**negrito**`, `*itálico*`,
 listas com `-`, `[link](url)`) e é renderizado por `src/lib/markdown.tsx`, que monta
 elementos React em vez de injetar HTML — conteúdo do painel nunca vira marcação executável.

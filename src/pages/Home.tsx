@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, Users, FlaskConical } from "lucide-react";
+import { ArrowRight, BookOpen, LayoutDashboard, FlaskConical } from "lucide-react";
 import { Link } from "react-router-dom";
 import { usePagina, useNumerosHome } from "../lib/conteudo";
 import { Markdown } from "../lib/markdown";
@@ -86,10 +86,11 @@ export const Home = () => {
 
       {/* caminhos */}
       <section className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        {/* na ordem do cabeçalho: a base, os números, e só então o projeto */}
         {[
           { to: "/consulta", Icone: BookOpen, titulo: "Consultar a base", texto: "Busque processualistas por nome, estado, titulação e área do processo, e chegue às obras publicadas." },
-          { to: "/metodologia", Icone: FlaskConical, titulo: "Metodologia", texto: "As cinco etapas do levantamento, os recortes adotados e os desafios enfrentados pelo grupo." },
-          { to: "/quem-somos", Icone: Users, titulo: "Quem somos", texto: "A coordenação, a organização e as alunas e alunos que conduziram a pesquisa." },
+          { to: "/dashboards", Icone: LayoutDashboard, titulo: "Ver as estatísticas", texto: "Atuação, titulação e produção bibliográfica das processualistas, em gráficos que se filtram por estado e entidade." },
+          { to: "/sobre", Icone: FlaskConical, titulo: "Conhecer o projeto", texto: "Por que o levantamento existe, as cinco etapas da metodologia e a equipe que conduziu a pesquisa." },
         ].map(({ to, Icone, titulo, texto }) => (
           <Link
             key={to}
