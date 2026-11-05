@@ -38,6 +38,8 @@ export interface ObraLattes {
   ano: string | null;
   /** fora do recorte (antes de 2015, sem ano, ou seção que não é publicação) */
   foraDoRecorte: boolean;
+  /** coleta de quem já está no portal: a obra parece já estar cadastrada */
+  jaNaBase?: boolean;
 }
 
 export interface CurriculoLattes {

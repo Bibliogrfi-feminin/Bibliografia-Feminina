@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, CheckCircle2, Download, ExternalLink, FileSpreadsheet, Loader2, Play,
-  Square, SkipForward, UploadCloud, X, RotateCcw, Puzzle, ChevronDown, Trash2, Search, Replace, Plus,
+  Square, SkipForward, UploadCloud, X, RotateCcw, Puzzle, ChevronDown, Trash2, Search, Replace, Plus, Users,
 } from "lucide-react";
 import { useAuth } from "../lib/AuthContext";
 import { supabase } from "../lib/supabase";
@@ -9,6 +9,7 @@ import { lerCurriculoHtml } from "../lib/lattes";
 import {
   apagarLote, apagarSigla, chaveSigla, listarSiglas, salvarSigla, type Siglas, criarLote, exportarLote, gravarColeta, lerPlanilha, listarItens, listarLotes,
   marcarErro, obrasPropostas, propostaDeCampos, proximoDaFila, revisaoPadrao, salvarRevisao,
+  aplicarNaBase, contarBase, criarLoteDaBase, type Revisao as RevisaoAprovada,
   temConflito, type CampoProposto, type ItemColeta, type Lote, type PlanilhaLida, type StatusItem,
 } from "../lib/coletaLattes";
 
@@ -202,12 +203,41 @@ function NovoLote({ cancelar, criado }: { cancelar?: () => void; criado: (l: Lot
 
   const comLattes = lida?.linhas.filter((l) => l.lattesId).length ?? 0;
 
+  // lote a partir de quem já está no portal
+  const [base, setBase] = useState<{ total: number; comLattes: number } | null>(null);
+  useEffect(() => { contarBase().then(setBase).catch(() => setBase(null)); }, []);
+  const criarDaBase = async () => {
+    setOcupado(true); setErro(null);
+    // a data de criação já aparece ao lado do nome no seletor de lotes
+    try { criado(await criarLoteDaBase("Base do portal")); }
+    catch (e: any) { setErro(e.message); setOcupado(false); }
+  };
+
   return (
     <div className="bg-white p-6 rounded-xl border border-[var(--border)] space-y-4">
       <div className="flex items-center">
         <h4 className="font-bold text-[var(--text-main)]">Novo lote de coleta</h4>
         {cancelar && <button onClick={cancelar} className="ml-auto text-[var(--text-muted)]"><X className="w-4 h-4" /></button>}
       </div>
+
+      <div className="p-4 rounded-xl border border-[var(--accent)] bg-[var(--bg)] flex flex-wrap items-center gap-3">
+        <Users className="w-6 h-6 text-[var(--accent)]" />
+        <div className="flex-1 min-w-56">
+          <p className="font-bold text-[var(--text-main)] text-sm">Quem já está no portal</p>
+          <p className="text-xs text-[var(--text-muted)]">
+            {base ? `${base.comLattes} das ${base.total} processualistas da base têm link do Lattes. ` : ""}
+            Sem planilha: a revisão aprovada grava direto na ficha, e as obras que ainda não estão no
+            portal saem numa planilha para classificar.
+          </p>
+        </div>
+        <button disabled={ocupado || !base?.comLattes} onClick={criarDaBase}
+          className="px-4 py-2 bg-[var(--accent)] text-white text-sm font-bold rounded-lg hover:bg-[var(--accent-hover)] transition disabled:opacity-60 flex items-center gap-2">
+          {ocupado && !arquivo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+          Criar lote da base
+        </button>
+      </div>
+
+      <p className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">Ou, a partir de uma planilha</p>
 
       <label className="block border-2 border-dashed border-[var(--border)] rounded-xl p-8 text-center cursor-pointer hover:border-[var(--accent)] transition">
         <input type="file" accept=".xlsx" className="hidden" onChange={(e) => escolher(e.target.files?.[0] || null)} />
@@ -267,6 +297,7 @@ function PainelLote({ lote, itens, atualizarItem, recarregar, apagar }: {
   const [erro, setErro] = useState<string | null>(null);
 
   const coleta = useColeta(lote, atualizarItem);
+  const daBase = lote.origem === "BASE";
   const [siglas, setSiglas] = useState<Siglas>(new Map());
   const carregarSiglas = useCallback(() => listarSiglas().then(setSiglas).catch((e) => setErro(e.message)), []);
   useEffect(() => { carregarSiglas(); }, [carregarSiglas]);
@@ -280,14 +311,14 @@ function PainelLote({ lote, itens, atualizarItem, recarregar, apagar }: {
   const feitos = contagem.COLETADO + contagem.REVISADO;
 
   const semConflito = useMemo(
-    () => itens.filter((i) => i.status === "COLETADO" && !temConflito(i, lote.colunas, siglas)),
+    () => itens.filter((i) => i.status === "COLETADO" && !temConflito(i, lote.colunas, siglas, daBase)),
     [itens, lote.colunas, siglas]
   );
 
   const visiveis = useMemo(() => {
     const b = busca.trim().toLowerCase();
     return itens.filter((i) => {
-      if (filtro === "CONFLITO") { if (!(i.status === "COLETADO" && temConflito(i, lote.colunas, siglas))) return false; }
+      if (filtro === "CONFLITO") { if (!(i.status === "COLETADO" && temConflito(i, lote.colunas, siglas, daBase))) return false; }
       else if (filtro !== "TODOS" && i.status !== filtro) return false;
       return !b || i.nome.toLowerCase().includes(b) || (i.lattes_id ?? "").includes(b);
     });
@@ -295,13 +326,17 @@ function PainelLote({ lote, itens, atualizarItem, recarregar, apagar }: {
 
   const aprovarEmLote = async () => {
     if (!window.confirm(
-      `Aprovar ${semConflito.length} currículos sem conflito? Entra só o que preenche célula vazia na planilha (e a data de atualização), mais as obras dentro do recorte.`
+      daBase
+        ? `Aprovar ${semConflito.length} currículos sem conflito? As fichas no portal recebem só o que estava vazio (e a data de atualização); as obras novas vão para a planilha.`
+        : `Aprovar ${semConflito.length} currículos sem conflito? Entra só o que preenche célula vazia na planilha (e a data de atualização), mais as obras dentro do recorte.`
     )) return;
     setAprovando({ feitos: 0, total: semConflito.length });
     try {
       for (let k = 0; k < semConflito.length; k++) {
         const it = semConflito[k];
-        atualizarItem(await salvarRevisao(it, revisaoPadrao(it, lote.colunas, siglas)));
+        const rev = revisaoPadrao(it, lote.colunas, siglas, daBase);
+        if (daBase) await aplicarNaBase(it, rev);
+        atualizarItem(await salvarRevisao(it, rev));
         setAprovando({ feitos: k + 1, total: semConflito.length });
       }
     } catch (e: any) { setErro(e.message); }
@@ -598,7 +633,7 @@ function Revisao({ item, lote, siglas, aprendeu, fechar, salvo }: {
 }) {
   const cv = item.coletado!;
   const [campos, setCampos] = useState<CampoProposto[]>(() => {
-    const p = propostaDeCampos(item, lote.colunas, siglas);
+    const p = propostaDeCampos(item, lote.colunas, siglas, lote.origem === "BASE");
     // revendo: o que já foi aprovado volta marcado, com o valor aprovado
     if (item.revisao) return p.map((c) => c.coluna in item.revisao!.campos
       ? { ...c, usar: true, lattes: item.revisao!.campos[c.coluna] } : { ...c, usar: false });
@@ -623,7 +658,7 @@ function Revisao({ item, lote, siglas, aprendeu, fechar, salvo }: {
     try {
       await salvarSigla(bruto, para);
       const novas = new Map(siglas).set(chaveSigla(bruto), para.trim());
-      const refeitas = propostaDeCampos(item, lote.colunas, novas);
+      const refeitas = propostaDeCampos(item, lote.colunas, novas, lote.origem === "BASE");
       setCampos((atuais) => atuais.map((c) =>
         c.bruto !== undefined && chaveSigla(c.bruto) === chaveSigla(bruto)
           ? refeitas.find((r) => r.chave === c.chave) ?? c : c));
@@ -638,6 +673,9 @@ function Revisao({ item, lote, siglas, aprendeu, fechar, salvo }: {
         campos: Object.fromEntries(campos.filter((c) => c.usar).map((c) => [c.coluna, c.lattes])),
         obras: obras.filter((o) => o.usar).map((o) => ({ citacao: o.citacao, ano: o.ano ?? "", secao: o.secao, tipoSugerido: o.tipoSugerido })),
       };
+      // no lote da base, a ficha muda antes: se o portal recusar, a
+      // revisão não fica marcada como aprovada
+      if (lote.origem === "BASE") await aplicarNaBase(item, revisao as RevisaoAprovada);
       salvo(await salvarRevisao(item, revisao));
     } catch (e: any) { setErro(e.message); setOcupado(false); }
   };
@@ -675,7 +713,7 @@ function Revisao({ item, lote, siglas, aprendeu, fechar, salvo }: {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs text-[var(--text-muted)]">
-                    <th className="p-2 w-8"></th><th className="p-2">Campo</th><th className="p-2">Na planilha</th><th className="p-2">Do Lattes (editável)</th>
+                    <th className="p-2 w-8"></th><th className="p-2">Campo</th><th className="p-2">{lote.origem === "BASE" ? "No portal" : "Na planilha"}</th><th className="p-2">Do Lattes (editável)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -724,7 +762,7 @@ function Revisao({ item, lote, siglas, aprendeu, fechar, salvo }: {
           <button onClick={fechar} className="px-4 py-2 text-sm font-bold rounded-lg border border-[var(--border)]">Cancelar</button>
           <button onClick={salvar} disabled={ocupado}
             className="px-5 py-2 bg-[var(--accent)] text-white text-sm font-bold rounded-lg hover:bg-[var(--accent-hover)] disabled:opacity-60 flex items-center gap-2">
-            {ocupado ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Aprovar revisão
+            {ocupado ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} {lote.origem === "BASE" ? "Aprovar e gravar na ficha" : "Aprovar revisão"}
           </button>
         </div>
       </div>
@@ -745,7 +783,10 @@ function ListaObras({ visiveis, alternar }: {
           <input type="checkbox" checked={o.usar} onChange={(e) => alternar(o, e.target.checked)} className="mt-0.5" />
           <div className="flex-1">
             <p className="text-[var(--text-main)]">{o.citacao}</p>
-            <p className="text-[var(--text-muted)] mt-1">{o.ano ?? "sem ano"} · {o.secao}</p>
+            <p className="text-[var(--text-muted)] mt-1">
+              {o.ano ?? "sem ano"} · {o.secao}
+              {o.jaNaBase && <span className="ml-2 px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-bold">já está no portal</span>}
+            </p>
           </div>
         </li>
       ))}

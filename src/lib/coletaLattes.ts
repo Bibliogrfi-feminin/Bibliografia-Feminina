@@ -1,6 +1,7 @@
 /**
- * Lotes de coleta do Lattes: planilha de mapeamento → fila → currículo
- * lido → revisão → planilha preenchida.
+ * Lotes de coleta do Lattes: planilha de mapeamento (ou a própria base do
+ * portal) → fila → currículo lido → revisão → planilha preenchida, ou,
+ * no lote da base, titulações gravadas direto em `associadas`.
  *
  * As colunas são achadas pelo NOME do cabeçalho, não pela letra: a
  * Beatriz descreveu tudo em letras (N, O, P...), mas basta alguém inserir
@@ -22,6 +23,8 @@ export interface Lote {
   arquivo: string | null;
   colunas: string[];
   colunas_obras: string[];
+  /** PLANILHA: veio de um .xlsx; BASE: das associadas do portal */
+  origem: "PLANILHA" | "BASE";
   criado_em: string;
 }
 
@@ -39,6 +42,8 @@ export interface ItemColeta {
   revisao: Revisao | null;
   revisado_em: string | null;
   erro: string | null;
+  /** só no lote da base */
+  associada_id: string | null;
 }
 
 export interface ObraRevisada {
@@ -155,6 +160,146 @@ const PADRAO_ABA2 = [
   "Se eletrônica pública, link de acesso ao trabalho",
 ];
 
+// ------------------------------------------------------- lote da base
+
+/**
+ * O lote da base não tem planilha: monta uma "linha" por associada com os
+ * mesmos cabeçalhos da planilha da Beatriz, para que revisão, siglas e
+ * exportação funcionem sem caminho à parte. `db` é a coluna de
+ * `associadas` por trás de cada cabeçalho.
+ */
+const COLUNAS_BASE: { cabecalho: string; db: string; tipo: "texto" | "bool" | "data" }[] = [
+  { cabecalho: "Nome da Processualista", db: "nome", tipo: "texto" },
+  { cabecalho: "Link do currículo Lattes", db: "link_lattes", tipo: "texto" },
+  { cabecalho: "Data da última atualização do Lattes", db: "data_atualizacao_lattes", tipo: "data" },
+  { cabecalho: "É especialista (lato sensu)?", db: "especialista", tipo: "bool" },
+  { cabecalho: "É mestre?", db: "mestre", tipo: "bool" },
+  { cabecalho: "Título da Dissertação de Mestrado", db: "titulo_mestrado", tipo: "texto" },
+  { cabecalho: "Ano de publicação da dissertação de Mestrado", db: "ano_mestrado", tipo: "texto" },
+  { cabecalho: "Faculdade em que defendeu Mestrado", db: "faculdade_mestrado", tipo: "texto" },
+  { cabecalho: "É doutora?", db: "doutora", tipo: "bool" },
+  { cabecalho: "Título da Tese de Doutorado", db: "titulo_doutorado", tipo: "texto" },
+  { cabecalho: "Ano de publicação da tese de Doutorado", db: "ano_doutorado", tipo: "texto" },
+  { cabecalho: "Faculdade em que defendeu o Doutorado", db: "faculdade_doutorado", tipo: "texto" },
+  { cabecalho: "É livre-docente?", db: "livre_docente", tipo: "bool" },
+  { cabecalho: "Título da Tese de Livre-Docência", db: "titulo_livre_docencia", tipo: "texto" },
+  { cabecalho: "Ano de publicação da Tese de Livre-Docência", db: "ano_livre_docencia", tipo: "texto" },
+  { cabecalho: "Faculdade em que defendeu a Livre-Docência", db: "faculdade_livre_docencia", tipo: "texto" },
+];
+
+/** campos de titulação: mexeu em algum, as obras derivadas são refeitas */
+const DB_TITULACAO = new Set(COLUNAS_BASE.filter((c) => /mestr|doutor|docen/.test(c.db)).map((c) => c.db));
+
+const paraLinha = (a: Record<string, any>): Record<string, string> =>
+  Object.fromEntries(COLUNAS_BASE.map((c) => {
+    const v = a[c.db];
+    if (c.tipo === "bool") return [c.cabecalho, v ? "Sim" : "Não"];
+    if (c.tipo === "data") return [c.cabecalho, v ? String(v).slice(0, 10).split("-").reverse().join("/") : ""];
+    return [c.cabecalho, v == null ? "" : String(v)];
+  }));
+
+async function associadasAtivas() {
+  const cols = ["id", ...COLUNAS_BASE.map((c) => c.db)].join(",");
+  return todos<Record<string, any>>((de, ate) =>
+    supabase.from("associadas").select(cols).is("deletado_em", null).order("nome").range(de, ate)
+  );
+}
+
+/** Quantas pessoas da base têm link do Lattes (para o botão de criar). */
+export async function contarBase(): Promise<{ total: number; comLattes: number }> {
+  const as = await associadasAtivas();
+  return { total: as.length, comLattes: as.filter((a) => idDoLink(a.link_lattes ?? "")).length };
+}
+
+export async function criarLoteDaBase(nome: string): Promise<Lote> {
+  const as = await associadasAtivas();
+  const { data: lote, error } = await supabase
+    .from("coleta_lotes")
+    .insert({ nome, arquivo: null, origem: "BASE", colunas: COLUNAS_BASE.map((c) => c.cabecalho), colunas_obras: PADRAO_ABA2 })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+
+  const itens = as.map((a, i) => {
+    const lattesId = idDoLink(a.link_lattes ?? "");
+    return {
+      lote_id: lote.id,
+      linha: i + 2,
+      nome: a.nome,
+      link: a.link_lattes ?? null,
+      lattes_id: lattesId,
+      associada_id: a.id,
+      original: paraLinha(a),
+      status: lattesId ? "PENDENTE" : "SEM_LATTES",
+    };
+  });
+  for (let i = 0; i < itens.length; i += 500) {
+    const { error: e } = await supabase.from("coleta_itens").insert(itens.slice(i, i + 500));
+    if (e) {
+      await supabase.from("coleta_lotes").delete().eq("id", lote.id);
+      throw new Error(`Erro ao gravar as linhas: ${e.message}`);
+    }
+  }
+  return lote as Lote;
+}
+
+/**
+ * Grava na ficha da pessoa o que a revisão aprovou. O RLS barra o UPDATE
+ * sem erro (só não acha linha), então a falta de linha devolvida vira erro
+ * aqui — senão a revisão ficaria "aprovada" sem nada ter mudado.
+ */
+export async function aplicarNaBase(item: ItemColeta, revisao: Revisao) {
+  if (!item.associada_id) throw new Error("Este item não está ligado a ninguém da base.");
+  const patch: Record<string, unknown> = {};
+  for (const [cabecalho, valor] of Object.entries(revisao.campos)) {
+    const c = COLUNAS_BASE.find((x) => x.cabecalho === cabecalho);
+    if (!c || c.db === "nome" || c.db === "link_lattes") continue;
+    const v = valor.trim();
+    if (c.tipo === "bool") patch[c.db] = norm(v) === "sim";
+    else if (c.tipo === "data") {
+      const m = v.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (m) patch[c.db] = `${m[3]}-${m[2]}-${m[1]}`;
+    } else patch[c.db] = !v || v === "N/A" ? null : v;
+  }
+  if (Object.keys(patch).length === 0) return;
+
+  const { data, error } = await supabase.from("associadas").update(patch).eq("id", item.associada_id).select("id");
+  if (error) throw new Error(error.message);
+  if (!data?.length) throw new Error("O portal não deixou gravar nesta ficha (sem permissão ou registro excluído).");
+
+  if (Object.keys(patch).some((k) => DB_TITULACAO.has(k))) {
+    const { error: e } = await supabase.rpc("sincronizar_titulacao_de", { p_associada: item.associada_id });
+    if (e) throw new Error(`Titulação gravada, mas as teses da ficha não foram refeitas: ${e.message}`);
+  }
+}
+
+/**
+ * A obra do Lattes já está no portal? As citações da base também vieram
+ * do Lattes (ou de algo parecido), então basta comparar as palavras: se
+ * quase todas as palavras da menor citação estão na outra, é a mesma obra.
+ */
+const palavras = (s: string) => new Set(norm(s).replace(/[^a-z0-9 ]/g, " ").split(" ").filter((w) => w.length >= 4));
+
+export function mesmaObra(a: string, b: string): boolean {
+  const A = palavras(a), B = palavras(b);
+  const menor = Math.min(A.size, B.size);
+  if (menor < 4) return false;
+  let comum = 0;
+  for (const w of A) if (B.has(w)) comum++;
+  return comum / menor >= 0.75;
+}
+
+async function marcarObrasNaBase(cv: CurriculoLattes, associadaId: string) {
+  const { data, error } = await supabase
+    .from("producoes_bibliograficas")
+    .select("citacao_completa")
+    .eq("associada_id", associadaId)
+    .not("tipo_obra", "in", '("Dissertação de Mestrado","Tese de Doutorado","Tese de Livre-Docência")');
+  if (error) throw new Error(error.message);
+  const existentes = (data ?? []).map((d) => d.citacao_completa as string);
+  for (const o of cv.obras) o.jaNaBase = existentes.some((e) => mesmaObra(o.citacao, e));
+}
+
 // ------------------------------------------------------------------ banco
 
 /** PostgREST devolve no máximo 1000 linhas por vez. */
@@ -226,6 +371,7 @@ export async function gravarColeta(item: ItemColeta, cv: CurriculoLattes): Promi
   if (cv.idLattes && item.lattes_id && cv.idLattes !== item.lattes_id) {
     avisos.unshift(`O currículo aberto (ID ${cv.idLattes}) não é o do link da planilha (ID ${item.lattes_id}).`);
   }
+  if (item.associada_id) await marcarObrasNaBase(cv, item.associada_id);
   const { data: { user } } = await supabase.auth.getUser();
   const { data, error } = await supabase
     .from("coleta_itens")
@@ -355,7 +501,15 @@ const FACULDADES: Record<string, keyof CurriculoLattes> = {
 };
 
 /** Campo a campo, o que muda — e o que muda sozinho sem perguntar. */
-export function propostaDeCampos(item: ItemColeta, colunas: string[], siglas: Siglas = new Map()): CampoProposto[] {
+/**
+ * `daBase`: no lote da base, especialista/mestre/doutora/livre-docente
+ * nascem "Não" no cadastro e podem só não ter sido preenchidos — um "Sim"
+ * do Lattes entra como se o campo estivesse vazio. E "N/A" contra campo
+ * vazio é a mesma coisa: a base guarda a ausência como vazio.
+ */
+export function propostaDeCampos(
+  item: ItemColeta, colunas: string[], siglas: Siglas = new Map(), daBase = false,
+): CampoProposto[] {
   const cv = item.coletado;
   if (!cv) return [];
   const { mapa } = mapaDeColunas(colunas);
@@ -374,7 +528,9 @@ export function propostaDeCampos(item: ItemColeta, colunas: string[], siglas: Si
       const ca = chaveSigla(atual);
       igual = ca === chaveSigla(valor) || (siglas.get(ca) ?? null) === valor;
     }
-    const situacao = !atual ? "vazio" : igual ? "igual" : "diferente";
+    const naAusente = daBase && valor === "N/A" && !atual;
+    const naoFraco = daBase && atual === "Não" && valor === "Sim";
+    const situacao = naAusente ? "igual" : !atual || naoFraco ? "vazio" : igual ? "igual" : "diferente";
     // a data do Lattes é sempre a mais nova; o resto só entra sozinho
     // onde a planilha estava em branco
     const usar = !!valor && (situacao === "vazio" || (c.chave === "atualizacao" && situacao === "diferente"));
@@ -383,19 +539,19 @@ export function propostaDeCampos(item: ItemColeta, colunas: string[], siglas: Si
 }
 
 export function obrasPropostas(item: ItemColeta) {
-  return (item.coletado?.obras ?? []).map((o) => ({ ...o, usar: !o.foraDoRecorte }));
+  return (item.coletado?.obras ?? []).map((o) => ({ ...o, usar: !o.foraDoRecorte && !o.jaNaBase }));
 }
 
 /** Há algo que pede decisão humana? Sem isso, dá para aprovar em lote. */
-export function temConflito(item: ItemColeta, colunas: string[], siglas?: Siglas): boolean {
+export function temConflito(item: ItemColeta, colunas: string[], siglas?: Siglas, daBase = false): boolean {
   if (!item.coletado) return false;
   if (item.coletado.avisos.length) return true;
-  return propostaDeCampos(item, colunas, siglas).some((c) => c.situacao === "diferente" && c.chave !== "atualizacao");
+  return propostaDeCampos(item, colunas, siglas, daBase).some((c) => c.situacao === "diferente" && c.chave !== "atualizacao");
 }
 
-export function revisaoPadrao(item: ItemColeta, colunas: string[], siglas?: Siglas): Revisao {
+export function revisaoPadrao(item: ItemColeta, colunas: string[], siglas?: Siglas, daBase = false): Revisao {
   const campos: Record<string, string> = {};
-  for (const c of propostaDeCampos(item, colunas, siglas)) if (c.usar) campos[c.coluna] = c.lattes;
+  for (const c of propostaDeCampos(item, colunas, siglas, daBase)) if (c.usar) campos[c.coluna] = c.lattes;
   const obras = obrasPropostas(item)
     .filter((o) => o.usar)
     .map((o) => ({ citacao: o.citacao, ano: o.ano ?? "", secao: o.secao, tipoSugerido: o.tipoSugerido }));
