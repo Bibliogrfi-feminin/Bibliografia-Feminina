@@ -13,15 +13,15 @@ import marca from "../assets/marca-bpf.png";
 const SEM_CABECALHO = new Set(["/", "/sobre"]);
 
 /**
- * A base vem primeiro: consultar e ver os números é o que o portal faz.
- * Sobre, Metodologia e Quem Somos são leitura de uma vez e viraram seções
- * de uma página só.
+ * O projeto vem antes da base: quem chega precisa saber o que é o
+ * levantamento e como foi feito antes de consultar os dados. Sobre,
+ * Metodologia e Quem Somos são seções de uma página só.
  */
 const PUBLICO = [
   { name: "Início", href: "/", icon: HomeIcon, exact: true },
+  { name: "O Projeto", href: "/sobre", icon: BookMarked },
   { name: "Consulta", href: "/consulta", icon: Search },
   { name: "Estatísticas", href: "/dashboards", icon: LayoutDashboard },
-  { name: "O Projeto", href: "/sobre", icon: BookMarked },
 ];
 
 export const Layout = () => {

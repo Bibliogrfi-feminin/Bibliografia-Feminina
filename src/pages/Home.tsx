@@ -90,11 +90,11 @@ export const Home = () => {
 
       {/* caminhos */}
       <section className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        {/* na ordem do cabeçalho: a base, os números, e só então o projeto */}
+        {/* na ordem do cabeçalho: primeiro o projeto, depois a base e os números */}
         {[
+          { to: "/sobre", Icone: FlaskConical, titulo: "Conhecer o projeto", texto: "Por que o levantamento existe, as cinco etapas da metodologia e a equipe que conduziu a pesquisa." },
           { to: "/consulta", Icone: BookOpen, titulo: "Consultar a base", texto: "Busque processualistas por nome, estado, titulação e área do processo, e chegue às obras publicadas." },
           { to: "/dashboards", Icone: LayoutDashboard, titulo: "Ver as estatísticas", texto: "Atuação, titulação e produção bibliográfica das processualistas, em gráficos que se filtram por estado e entidade." },
-          { to: "/sobre", Icone: FlaskConical, titulo: "Conhecer o projeto", texto: "Por que o levantamento existe, as cinco etapas da metodologia e a equipe que conduziu a pesquisa." },
         ].map(({ to, Icone, titulo, texto }) => (
           <Link
             key={to}
