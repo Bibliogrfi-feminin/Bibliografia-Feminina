@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo, useRef, useDeferredValue } from "react";
 import { Link } from "react-router-dom";
-import { Search, Loader2, ExternalLink, X } from "lucide-react";
+import { Search, Loader2, ExternalLink } from "lucide-react";
 import { getObras, getAssociadas, Obra, Associada, semAcento } from "../lib/base";
-import { Chip, Paginacao, ROTULO_FILTRO, SELECT_CHIP, rotuloTipo } from "./ConsultaUI";
+import { Paginacao, rotuloTipo } from "./ConsultaUI";
 
 /**
  * Busca por obra: quem procura "coisa julgada" chega na lista de trabalhos
@@ -129,6 +129,9 @@ export const BuscaObras = () => {
 
   const limpar = () => { setTermo(""); setArea(""); setTipo(""); setAno(""); };
 
+  const campoCls =
+    "px-3 py-2 bg-white border border-[var(--border)] rounded-lg text-sm outline-none focus:ring-1 focus:ring-[var(--accent)] text-[var(--text-main)]";
+
   const irParaPagina = (n: number) => {
     setPagina(n);
     topoResultados.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -152,53 +155,59 @@ export const BuscaObras = () => {
 
   return (
     <div className="space-y-5">
-      <form onSubmit={(e) => e.preventDefault()} className="bg-white p-5 md:p-6 rounded-xl border border-[var(--border)] space-y-5">
-        <div className="relative">
-          <Search className="w-5 h-5 text-[var(--text-muted)] absolute left-4 top-1/2 -translate-y-1/2" />
-          <input
-            type="search"
-            aria-label="Buscar obras"
-            placeholder="Tema ou título, ex.: coisa julgada"
-            className="w-full pl-12 pr-4 py-3 bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[15px] focus:bg-white focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent outline-none"
-            value={termo}
-            onChange={(e) => setTermo(e.target.value)}
-          />
-        </div>
+      <div className="bg-white p-5 rounded-xl border border-[var(--border)]">
+        <form onSubmit={(e) => e.preventDefault()} className="flex flex-wrap gap-3 items-end">
+          <div className="flex-1 min-w-[260px]">
+            <label className="block text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1">
+              Buscar no título ou na citação
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Ex: coisa julgada, tutela provisória, execução…"
+                className="w-full pl-10 pr-4 py-2 bg-white border border-[var(--border)] rounded-lg text-sm focus:ring-1 focus:ring-[var(--accent)] outline-none"
+                value={termo}
+                onChange={(e) => setTermo(e.target.value)}
+              />
+              <Search className="w-4 h-4 text-[var(--text-muted)] absolute left-3 top-3" />
+            </div>
+          </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={`${ROTULO_FILTRO} mr-1 w-full sm:w-auto`}>Área</span>
-          <Chip ativo={area === ""} onClick={() => setArea("")}>Todas</Chip>
-          {AREAS.map(([valor, rotulo]) => (
-            <Chip key={valor} ativo={area === valor} onClick={() => setArea(area === valor ? "" : valor)}>{rotulo}</Chip>
-          ))}
-        </div>
+          <div className="w-44">
+            <label className="block text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1">Área</label>
+            <select value={area} onChange={(e) => setArea(e.target.value)} className={`w-full ${campoCls}`}>
+              <option value="">Todas</option>
+              {AREAS.map(([valor]) => <option key={valor} value={valor}>{valor}</option>)}
+            </select>
+          </div>
 
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-          <label className="flex items-center gap-2">
-            <span className={ROTULO_FILTRO}>Tipo</span>
-            <select value={tipo} onChange={(e) => setTipo(e.target.value)} className={SELECT_CHIP}>
+          <div className="w-52">
+            <label className="block text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1">Tipo de obra</label>
+            <select value={tipo} onChange={(e) => setTipo(e.target.value)} className={`w-full ${campoCls}`}>
               <option value="">Todos</option>
               {TIPOS.map((t) => <option key={t} value={t}>{rotuloTipo(t)}</option>)}
             </select>
-          </label>
-          <label className="flex items-center gap-2">
-            <span className={ROTULO_FILTRO}>Ano</span>
-            <select value={ano} onChange={(e) => setAno(e.target.value)} className={SELECT_CHIP}>
+          </div>
+
+          <div className="w-28">
+            <label className="block text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1">Ano</label>
+            <select value={ano} onChange={(e) => setAno(e.target.value)} className={`w-full ${campoCls}`}>
               <option value="">Todos</option>
               {anos.map((a) => <option key={a} value={a}>{a === "s/d" ? "Sem data" : a}</option>)}
             </select>
-          </label>
+          </div>
+
           {temFiltro && (
             <button
               type="button"
               onClick={limpar}
-              className="ml-auto inline-flex items-center gap-1 text-[13px] font-semibold text-[var(--accent)] hover:text-[var(--heading)]"
+              className="px-3 py-2 text-sm font-semibold text-[var(--text-muted)] hover:text-[var(--accent)]"
             >
-              <X className="w-4 h-4" /> Limpar filtros
+              Limpar
             </button>
           )}
-        </div>
-      </form>
+        </form>
+      </div>
 
       <div ref={topoResultados} className={`scroll-mt-24 transition-opacity ${atualizando ? "opacity-60" : ""}`}>
         <p className="text-[14px] text-[var(--text-muted)] mb-3">
