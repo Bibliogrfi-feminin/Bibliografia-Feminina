@@ -14,7 +14,7 @@ export const Rodape = ({ compacto = false }: { compacto?: boolean }) => {
       <footer className="text-center px-4">
         <p className="text-[12px] text-[var(--text-muted)] leading-relaxed">
           Sistema completo de gestão e site desenvolvidos por{" "}
-          <span className="font-semibold text-[var(--accent)]">Igor M. Rocha</span>, {ano}.
+          <span className="font-semibold text-[var(--accent)]">Igor M. Rocha e Leonardo Horodenko Ferreira</span>, {ano}.
         </p>
         <p className="text-[11px] text-[var(--text-muted)] mt-1">
           Todos os direitos reservados.
@@ -39,7 +39,7 @@ export const Rodape = ({ compacto = false }: { compacto?: boolean }) => {
           <div className="md:text-right">
             <p className="text-[12.5px] text-[var(--text-muted)] leading-relaxed">
               Sistema completo de gestão e site desenvolvidos por{" "}
-              <span className="font-semibold text-[var(--accent)]">Igor M. Rocha</span>, {ano}.
+              <span className="font-semibold text-[var(--accent)]">Igor M. Rocha e Leonardo Horodenko Ferreira</span>, {ano}.
             </p>
             <p className="text-[12px] text-[var(--text-muted)] mt-1">
               Todos os direitos reservados.

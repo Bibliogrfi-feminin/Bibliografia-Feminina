@@ -1,8 +1,8 @@
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/AuthContext";
 import {
-  Search, LayoutDashboard, Database, Shield, LogOut, Users, LogIn,
-  Home as HomeIcon, BookMarked, Menu, X, FlaskConical,
+  Search, LayoutDashboard, Database, Shield, LogOut, LogIn,
+  Home as HomeIcon, BookMarked, Menu, X,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useState } from "react";
@@ -10,14 +10,16 @@ import { Rodape } from "./Rodape";
 import marca from "../assets/marca-bpf.png";
 
 /** rotas cujas paginas ja renderizam o proprio titulo */
-const SEM_CABECALHO = new Set(["/", "/sobre", "/metodologia", "/quem-somos"]);
+const SEM_CABECALHO = new Set(["/", "/sobre"]);
 
-/** rotulos curtos: com os nomes por extenso a barra estourava e quebrava em duas linhas */
+/**
+ * O projeto vem antes da base: quem chega precisa saber o que é o
+ * levantamento e como foi feito antes de consultar os dados. Sobre,
+ * Metodologia e Quem Somos são seções de uma página só.
+ */
 const PUBLICO = [
   { name: "Início", href: "/", icon: HomeIcon, exact: true },
   { name: "O Projeto", href: "/sobre", icon: BookMarked },
-  { name: "Metodologia", href: "/metodologia", icon: FlaskConical },
-  { name: "Quem Somos", href: "/quem-somos", icon: Users },
   { name: "Consulta", href: "/consulta", icon: Search },
   { name: "Estatísticas", href: "/dashboards", icon: LayoutDashboard },
 ];
@@ -188,7 +190,8 @@ export const Layout = () => {
         )}
       </nav>
 
-      <main className="flex-1 flex flex-col">
+      {/* clip, e não hidden: corta a faixa do banner da Home sem quebrar o sticky de O Projeto */}
+      <main className="flex-1 flex flex-col overflow-x-clip">
         {/* paginas institucionais ja trazem o proprio titulo; repetir a rota
             aqui em cima duplicava o cabecalho */}
         {!SEM_CABECALHO.has(location.pathname) && (

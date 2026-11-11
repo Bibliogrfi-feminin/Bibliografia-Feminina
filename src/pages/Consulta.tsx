@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Download } from "lucide-react";
+import { Search, Download, ExternalLink } from "lucide-react";
 import { baixarXlsx, baixarCsv, deRegistros } from "../lib/xlsx";
 import { getAssociadas, getObras, Associada, Obra, semAcento } from "../lib/base";
 import { BuscaObras } from "../components/BuscaObras";
@@ -127,10 +127,6 @@ const BuscaPessoas = () => {
     }
   };
 
-  const selo = (v: boolean) =>
-    v ? "bg-[var(--success-bg)] text-[var(--success)] border-transparent"
-      : "bg-white text-[var(--text-muted)] border-[var(--border)]";
-
   const campoCls =
     "w-full px-3 py-2 bg-white border border-[var(--border)] rounded-lg text-sm focus:ring-1 focus:ring-[var(--accent)] outline-none";
 
@@ -225,9 +221,11 @@ const BuscaPessoas = () => {
                 <th className="px-6 py-3 font-semibold">Nome</th>
                 <th className="px-4 py-3 font-semibold">Atuação</th>
                 <th className="px-4 py-3 font-semibold text-center">UF</th>
-                <th className="px-4 py-3 font-semibold text-center">IBDP</th>
-                <th className="px-4 py-3 font-semibold text-center">ABEP</th>
                 <th className="px-4 py-3 font-semibold">Titulação</th>
+                {/* IBDP e ABEP guiaram a busca das autoras, mas não são o que
+                    se quer ver delas: a coluna leva ao currículo. As
+                    entidades seguem nos filtros, na ficha e na exportação. */}
+                <th className="px-4 py-3 font-semibold text-center">Lattes</th>
                 <th className="px-6 py-3 font-semibold text-right">Ações</th>
               </tr>
             </thead>
@@ -259,19 +257,24 @@ const BuscaPessoas = () => {
                     </td>
                     <td className="px-4 py-4 text-[var(--text-muted)]">{a.atuacao ?? "—"}</td>
                     <td className="px-4 py-4 text-center text-[var(--text-muted)]">{a.uf ?? "—"}</td>
-                    <td className="px-4 py-4 text-center">
-                      <span className={`inline-flex px-2 py-0.5 text-[10px] rounded border font-bold uppercase ${selo(a.ibdp)}`}>
-                        {a.ibdp ? "Sim" : "Não"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4 text-center">
-                      <span className={`inline-flex px-2 py-0.5 text-[10px] rounded border font-bold uppercase ${selo(a.abep)}`}>
-                        {a.abep ? "Sim" : "Não"}
-                      </span>
-                    </td>
                     <td className="px-4 py-4 text-[var(--text-muted)]">
                       {[a.livreDocente && "Livre-doc.", a.doutora && "Doutora", a.mestre && "Mestre", a.especialista && "Espec."]
                         .filter(Boolean).join(" · ") || "—"}
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      {a.lattes ? (
+                        <a
+                          href={a.lattes}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={`Currículo Lattes de ${a.nome}`}
+                          className="inline-flex items-center gap-1 font-semibold text-[var(--accent)] hover:underline"
+                        >
+                          Lattes <ExternalLink className="w-3 h-3" />
+                        </a>
+                      ) : (
+                        <span className="text-[var(--text-muted)]">—</span>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-right">
                       <button

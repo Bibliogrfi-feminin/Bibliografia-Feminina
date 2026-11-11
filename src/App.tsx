@@ -15,9 +15,7 @@ import { Administracao } from "./pages/Administracao";
 import { Dados } from "./pages/Dados";
 import { FichaAssociada } from "./pages/FichaAssociada";
 import { Home } from "./pages/Home";
-import { Sobre } from "./pages/Sobre";
-import { Metodologia } from "./pages/Metodologia";
-import { QuemSomos } from "./pages/QuemSomos";
+import { OProjeto } from "./pages/OProjeto";
 
 function ProtectedRoute({ children, reqAdmin = false }: { children: ReactNode; reqAdmin?: boolean }) {
   const { user, loading } = useAuth();
@@ -58,11 +56,12 @@ function AppRoutes() {
       <Route path="/login" element={<Login />} />
       <Route path="/" element={<Layout />}>
         <Route index element={<Home />} />
-        <Route path="sobre" element={<Sobre />} />
-        <Route path="metodologia" element={<Metodologia />} />
-        <Route path="quem-somos" element={<QuemSomos />} />
+        <Route path="sobre" element={<OProjeto />} />
+        {/* viraram seções de /sobre; os endereços antigos levam à seção certa */}
+        <Route path="metodologia" element={<Navigate to="/sobre?secao=metodologia" replace />} />
+        <Route path="quem-somos" element={<Navigate to="/sobre?secao=equipe" replace />} />
         {/* rota antiga, mantida para nao quebrar links ja divulgados */}
-        <Route path="idealizadoras" element={<Navigate to="/quem-somos" replace />} />
+        <Route path="idealizadoras" element={<Navigate to="/sobre?secao=equipe" replace />} />
         <Route path="consulta" element={<Consulta />} />
         <Route path="consulta/:id" element={<FichaAssociada />} />
         <Route path="dashboards" element={<Dashboards />} />
