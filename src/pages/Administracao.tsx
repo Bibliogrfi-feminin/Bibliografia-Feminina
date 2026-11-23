@@ -272,6 +272,9 @@ export const Administracao = () => {
                   placeholder={isEditing ? "deixe em branco para não alterar" : ""}
                   className="w-full px-3 py-2 border border-[var(--border)] rounded-lg outline-none focus:ring-1 focus:ring-[var(--accent)] font-mono text-sm"
                 />
+                <p className="text-[11px] text-[var(--text-muted)] mt-1">
+                  No primeiro acesso com esta senha, a pessoa é obrigada a trocá-la por uma só dela.
+                </p>
               </div>
 
               <div>

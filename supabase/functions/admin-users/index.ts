@@ -62,7 +62,8 @@ Deno.serve(async (req: Request) => {
         app_metadata: { role }, user_metadata: { nome },
       });
       if (err) throw err;
-      await adminClient.from("perfis").upsert({ id: created.user.id, nome, role });
+      // conta nova nasce com senha dada pela administradora: troca no 1º acesso
+      await adminClient.from("perfis").upsert({ id: created.user.id, nome, role, trocar_senha: true });
       return json({ id: created.user.id, email: created.user.email, nome, role }, 201);
     }
 
@@ -83,6 +84,13 @@ Deno.serve(async (req: Request) => {
       const perfilUp: Record<string, unknown> = {};
       if (nome) perfilUp.nome = nome;
       if (role) perfilUp.role = role;
+      // senha redefinida pela administradora para outra pessoa: troca no
+      // próximo acesso. Vem DEPOIS do updateUserById, cujo gatilho no banco
+      // limpa a marca ao mudar a senha.
+      if (senha) {
+        const { data: { user: eu } } = await userClient.auth.getUser();
+        if (eu?.id !== userId) perfilUp.trocar_senha = true;
+      }
       if (Object.keys(perfilUp).length > 0)
         await adminClient.from("perfis").update(perfilUp).eq("id", userId);
       return json({ success: true });

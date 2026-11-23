@@ -16,6 +16,7 @@ import { Dados } from "./pages/Dados";
 import { FichaAssociada } from "./pages/FichaAssociada";
 import { Home } from "./pages/Home";
 import { OProjeto } from "./pages/OProjeto";
+import { TrocarSenha } from "./pages/TrocarSenha";
 
 function ProtectedRoute({ children, reqAdmin = false }: { children: ReactNode; reqAdmin?: boolean }) {
   const { user, loading } = useAuth();
@@ -50,10 +51,26 @@ function SincronizaEmbed() {
   return null;
 }
 
+/**
+ * Senha ainda é a que a administradora definiu: nada além da tela de
+ * troca (o banco também não deixa gravar enquanto isso).
+ */
+function ExigeTrocaDeSenha() {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+  if (loading) return null;
+  if (user?.trocarSenha && location.pathname !== "/trocar-senha") return <Navigate to="/trocar-senha" replace />;
+  if (!user?.trocarSenha && location.pathname === "/trocar-senha") return <Navigate to={user ? "/dados" : "/login"} replace />;
+  return null;
+}
+
 function AppRoutes() {
   return (
+    <>
+    <ExigeTrocaDeSenha />
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/trocar-senha" element={<TrocarSenha />} />
       <Route path="/" element={<Layout />}>
         <Route index element={<Home />} />
         <Route path="sobre" element={<OProjeto />} />
@@ -72,6 +89,7 @@ function AppRoutes() {
         <Route path="admin/dados" element={<Navigate to="/dados" replace />} />
       </Route>
     </Routes>
+    </>
   );
 }
 
