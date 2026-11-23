@@ -283,11 +283,14 @@ export const Administracao = () => {
                   onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                   className="w-full px-3 py-2 border border-[var(--border)] rounded-lg outline-none focus:ring-1 focus:ring-[var(--accent)]"
                 >
+                  <option value="PESQUISADOR">Pesquisador(a)</option>
                   <option value="ANOTADOR">Anotadora</option>
                   <option value="ADMIN">Administradora</option>
                 </select>
                 <p className="text-[11px] text-[var(--text-muted)] mt-2 leading-relaxed">
-                  A <strong>anotadora</strong> cadastra e corrige registros em Dados. A{" "}
+                  <strong>Pesquisador(a)</strong> cadastra pessoas novas e coleta currículos; a revisão
+                  vai para a conferência da equipe e não pode apagar nem esvaziar o que já existe. A{" "}
+                  <strong>anotadora</strong> cadastra, corrige registros e confere as revisões. A{" "}
                   <strong>administradora</strong> faz isso e mais: gerencia usuários, edita os
                   textos do site, alimenta a base por planilha e exclui registros.
                 </p>

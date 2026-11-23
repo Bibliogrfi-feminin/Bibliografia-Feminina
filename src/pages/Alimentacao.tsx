@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
+import { opcoesDeArea } from "../lib/areas";
 import { supabase } from "../lib/supabase";
 import { Plus, Trash2 } from "lucide-react";
 import { ProducaoForm } from "../components/ProducaoForm";
@@ -169,7 +170,7 @@ export const CadastroIndividual = () => {
                       <div className="md:col-span-2"><label className="text-xs font-bold block mb-1">Título da Dissertação</label><input {...register("titulo_mestrado")} className="w-full px-3 py-2 border rounded-lg" /></div>
                       <div><label className="text-xs font-bold block mb-1">Ano de publicação</label><input type="number" {...register("ano_mestrado")} className="w-full px-3 py-2 border rounded-lg" /></div>
                       <div><label className="text-xs font-bold block mb-1">Faculdade/IES</label><input {...register("faculdade_mestrado")} className="w-full px-3 py-2 border rounded-lg" /></div>
-                      <div><label className="text-xs font-bold block mb-1">Área de concentração</label><input {...register("area_mestrado")} className="w-full px-3 py-2 border rounded-lg" /></div>
+                      <div><label className="text-xs font-bold block mb-1">Área em que defendeu</label><select {...register("area_mestrado")} className="w-full px-3 py-2 border rounded-lg bg-white"><option value="">— classificar —</option>{opcoesDeArea(watch("area_mestrado")).map((a) => <option key={a} value={a}>{a}</option>)}</select></div>
                       <div><label className="text-xs font-bold block mb-1">Link de acesso (público)</label><input {...register("link_mestrado")} className="w-full px-3 py-2 border rounded-lg" /></div>
                     </div>
                   )}
@@ -182,7 +183,7 @@ export const CadastroIndividual = () => {
                       <div className="md:col-span-2"><label className="text-xs font-bold block mb-1">Título da Tese</label><input {...register("titulo_doutorado")} className="w-full px-3 py-2 border rounded-lg" /></div>
                       <div><label className="text-xs font-bold block mb-1">Ano de publicação</label><input type="number" {...register("ano_doutorado")} className="w-full px-3 py-2 border rounded-lg" /></div>
                       <div><label className="text-xs font-bold block mb-1">Faculdade/IES</label><input {...register("faculdade_doutorado")} className="w-full px-3 py-2 border rounded-lg" /></div>
-                      <div><label className="text-xs font-bold block mb-1">Área de concentração</label><input {...register("area_doutorado")} className="w-full px-3 py-2 border rounded-lg" /></div>
+                      <div><label className="text-xs font-bold block mb-1">Área em que defendeu</label><select {...register("area_doutorado")} className="w-full px-3 py-2 border rounded-lg bg-white"><option value="">— classificar —</option>{opcoesDeArea(watch("area_doutorado")).map((a) => <option key={a} value={a}>{a}</option>)}</select></div>
                       <div><label className="text-xs font-bold block mb-1">Link de acesso (público)</label><input {...register("link_doutorado")} className="w-full px-3 py-2 border rounded-lg" /></div>
                     </div>
                   )}
@@ -195,7 +196,7 @@ export const CadastroIndividual = () => {
                       <div className="md:col-span-2"><label className="text-xs font-bold block mb-1">Título da Tese</label><input {...register("titulo_livre_docencia")} className="w-full px-3 py-2 border rounded-lg" /></div>
                       <div><label className="text-xs font-bold block mb-1">Ano de publicação</label><input type="number" {...register("ano_livre_docencia")} className="w-full px-3 py-2 border rounded-lg" /></div>
                       <div><label className="text-xs font-bold block mb-1">Faculdade/IES</label><input {...register("faculdade_livre_docencia")} className="w-full px-3 py-2 border rounded-lg" /></div>
-                      <div><label className="text-xs font-bold block mb-1">Área de concentração</label><input {...register("area_livre_docencia")} className="w-full px-3 py-2 border rounded-lg" /></div>
+                      <div><label className="text-xs font-bold block mb-1">Área em que defendeu</label><select {...register("area_livre_docencia")} className="w-full px-3 py-2 border rounded-lg bg-white"><option value="">— classificar —</option>{opcoesDeArea(watch("area_livre_docencia")).map((a) => <option key={a} value={a}>{a}</option>)}</select></div>
                       <div><label className="text-xs font-bold block mb-1">Link de acesso (público)</label><input {...register("link_livre_docencia")} className="w-full px-3 py-2 border rounded-lg" /></div>
                     </div>
                   )}

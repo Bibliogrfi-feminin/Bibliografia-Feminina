@@ -15,7 +15,8 @@ import { baixarXlsx, type Aba } from "./xlsx";
 
 // ------------------------------------------------------------------ tipos
 
-export type StatusItem = "SEM_LATTES" | "PENDENTE" | "COLETADO" | "REVISADO" | "ERRO";
+/** AGUARDANDO: revisão de pesquisador(a), esperando a conferência da equipe */
+export type StatusItem = "SEM_LATTES" | "PENDENTE" | "COLETADO" | "AGUARDANDO" | "REVISADO" | "ERRO";
 
 export interface Lote {
   id: string;
@@ -41,6 +42,8 @@ export interface ItemColeta {
   coletado_em: string | null;
   revisao: Revisao | null;
   revisado_em: string | null;
+  /** quando pesquisador(a) enviou a revisão para conferência */
+  proposto_em?: string | null;
   erro: string | null;
   /** só no lote da base */
   associada_id: string | null;
@@ -72,17 +75,33 @@ export const CAMPOS = [
   { chave: "titulo_mestrado", rotulo: "Título da dissertação", palavras: ["titulo", "mestrado"] },
   { chave: "ano_mestrado", rotulo: "Ano do mestrado", palavras: ["ano", "mestrado"] },
   { chave: "faculdade_mestrado", rotulo: "Faculdade do mestrado", palavras: ["faculdade", "mestrado"] },
+  { chave: "area_mestrado", rotulo: "Área do mestrado", palavras: ["area", "mestrado"] },
   { chave: "doutora", rotulo: "É doutora?", palavras: ["e doutora"] },
   { chave: "titulo_doutorado", rotulo: "Título da tese", palavras: ["titulo", "doutorado"] },
   { chave: "ano_doutorado", rotulo: "Ano do doutorado", palavras: ["ano", "doutorado"] },
   { chave: "faculdade_doutorado", rotulo: "Faculdade do doutorado", palavras: ["faculdade", "doutorado"] },
+  { chave: "area_doutorado", rotulo: "Área do doutorado", palavras: ["area", "doutorado"] },
   { chave: "livre_docente", rotulo: "É livre-docente?", palavras: ["livre-docente"] },
   { chave: "titulo_livre_docencia", rotulo: "Título da livre-docência", palavras: ["titulo", "livre-docencia"] },
   { chave: "ano_livre_docencia", rotulo: "Ano da livre-docência", palavras: ["ano", "livre-docencia"] },
   { chave: "faculdade_livre_docencia", rotulo: "Faculdade da livre-docência", palavras: ["faculdade", "livre-docencia"] },
+  { chave: "area_livre_docencia", rotulo: "Área da livre-docência", palavras: ["area", "livre-docencia"] },
 ] as const;
 
 export type ChaveCampo = (typeof CAMPOS)[number]["chave"];
+
+/**
+ * Campos que o Lattes não informa — o grupo classifica, escolhendo da
+ * lista fechada. Nunca entram sozinhos (nem na aprovação em lote), e a
+ * planilha pode não ter a coluna (lotes antigos): aí a linha só não aparece.
+ * O valor é a titulação de que a área depende.
+ */
+const MANUAIS: Partial<Record<ChaveCampo, "mestre" | "doutora" | "livreDocente">> = {
+  area_mestrado: "mestre",
+  area_doutorado: "doutora",
+  area_livre_docencia: "livreDocente",
+};
+export const campoManual = (chave: ChaveCampo) => chave in MANUAIS;
 
 function acharColuna(colunas: string[], palavras: readonly string[]): string | null {
   return colunas.find((c) => palavras.every((p) => norm(c).includes(p))) ?? null;
@@ -95,7 +114,7 @@ export function mapaDeColunas(colunas: string[]) {
   for (const c of CAMPOS) {
     const col = acharColuna(colunas, c.palavras);
     if (col) mapa[c.chave] = col;
-    else faltando.push(c.rotulo);
+    else if (!campoManual(c.chave)) faltando.push(c.rotulo);
   }
   return { mapa, faltando };
 }
@@ -177,15 +196,41 @@ const COLUNAS_BASE: { cabecalho: string; db: string; tipo: "texto" | "bool" | "d
   { cabecalho: "Título da Dissertação de Mestrado", db: "titulo_mestrado", tipo: "texto" },
   { cabecalho: "Ano de publicação da dissertação de Mestrado", db: "ano_mestrado", tipo: "texto" },
   { cabecalho: "Faculdade em que defendeu Mestrado", db: "faculdade_mestrado", tipo: "texto" },
+  { cabecalho: "Área em que defendeu Mestrado", db: "area_mestrado", tipo: "texto" },
   { cabecalho: "É doutora?", db: "doutora", tipo: "bool" },
   { cabecalho: "Título da Tese de Doutorado", db: "titulo_doutorado", tipo: "texto" },
   { cabecalho: "Ano de publicação da tese de Doutorado", db: "ano_doutorado", tipo: "texto" },
   { cabecalho: "Faculdade em que defendeu o Doutorado", db: "faculdade_doutorado", tipo: "texto" },
+  { cabecalho: "Área em que defendeu o Doutorado", db: "area_doutorado", tipo: "texto" },
   { cabecalho: "É livre-docente?", db: "livre_docente", tipo: "bool" },
   { cabecalho: "Título da Tese de Livre-Docência", db: "titulo_livre_docencia", tipo: "texto" },
   { cabecalho: "Ano de publicação da Tese de Livre-Docência", db: "ano_livre_docencia", tipo: "texto" },
   { cabecalho: "Faculdade em que defendeu a Livre-Docência", db: "faculdade_livre_docencia", tipo: "texto" },
+  { cabecalho: "Área em que defendeu a Livre-Docência", db: "area_livre_docencia", tipo: "texto" },
 ];
+
+/**
+ * Colunas da ABA 1 deste lote. Um lote da base guarda os cabeçalhos de
+ * quando foi criado; os que entraram depois (as áreas da titulação) são
+ * acrescentados aqui, para que lotes já coletados também os mostrem.
+ */
+export function colunasDoLote(lote: Pick<Lote, "origem" | "colunas">): string[] {
+  if (lote.origem !== "BASE") return lote.colunas;
+  const faltam = COLUNAS_BASE.map((c) => c.cabecalho).filter((c) => !lote.colunas.includes(c));
+  return faltam.length ? [...lote.colunas, ...faltam] : lote.colunas;
+}
+
+/**
+ * O retrato da ficha guardado num lote antigo não tem as áreas: lê da
+ * ficha agora, nos mesmos cabeçalhos da planilha.
+ */
+export async function areasDaFicha(associadaId: string): Promise<Record<string, string>> {
+  const cols = COLUNAS_BASE.filter((c) => c.db.startsWith("area_"));
+  const { data, error } = await supabase.from("associadas").select(cols.map((c) => c.db).join(",")).eq("id", associadaId).single();
+  if (error) throw new Error(error.message);
+  const a = data as unknown as Record<string, string | null>;
+  return Object.fromEntries(cols.map((c) => [c.cabecalho, a[c.db] ?? ""]));
+}
 
 /** campos de titulação: mexeu em algum, as obras derivadas são refeitas */
 const DB_TITULACAO = new Set(COLUNAS_BASE.filter((c) => /mestr|doutor|docen/.test(c.db)).map((c) => c.db));
@@ -415,6 +460,27 @@ export async function salvarRevisao(item: ItemColeta, revisao: Revisao): Promise
   return data as ItemColeta;
 }
 
+/**
+ * Pesquisador(a) não grava: a revisão vai para a conferência da equipe.
+ * O banco carimba quem enviou e barra esvaziar campo preenchido.
+ */
+export async function enviarRevisao(item: ItemColeta, revisao: Revisao): Promise<ItemColeta> {
+  const { data, error } = await supabase
+    .from("coleta_itens")
+    .update({ status: "AGUARDANDO", revisao })
+    .eq("id", item.id)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data as ItemColeta;
+}
+
+/** Valor que conta como preenchido ("N/A" é a planilha dizendo que não se aplica). */
+export const preenchido = (v: string | null | undefined) => {
+  const t = (v ?? "").trim();
+  return !!t && t !== "N/A";
+};
+
 // ---------------------------------------------------------------- revisão
 
 // ----------------------------------------------------------------- siglas
@@ -477,6 +543,8 @@ export function valoresDoLattes(cv: CurriculoLattes, siglas: Siglas = new Map())
     titulo_doutorado: d.titulo, ano_doutorado: d.ano, faculdade_doutorado: d.faculdade,
     livre_docente: simNao(cv.livreDocente),
     titulo_livre_docencia: l.titulo, ano_livre_docencia: l.ano, faculdade_livre_docencia: l.faculdade,
+    // o Lattes não classifica: é o grupo que escolhe (ver MANUAIS)
+    area_mestrado: "", area_doutorado: "", area_livre_docencia: "",
   };
 }
 
@@ -486,8 +554,12 @@ export interface CampoProposto {
   coluna: string;
   atual: string;
   lattes: string;
-  /** "vazio": a planilha não tinha nada; "igual"; "diferente": conflito */
-  situacao: "vazio" | "igual" | "diferente";
+  /**
+   * "vazio": a planilha não tinha nada; "igual"; "diferente": conflito;
+   * "manual": o Lattes não informa, o grupo classifica (`lattes` começa
+   * com o valor atual)
+   */
+  situacao: "vazio" | "igual" | "diferente" | "manual";
   /** marcado por padrão? */
   usar: boolean;
   /** faculdade: como o Lattes escreve, antes da tabela de siglas */
@@ -514,9 +586,15 @@ export function propostaDeCampos(
   if (!cv) return [];
   const { mapa } = mapaDeColunas(colunas);
   const lattes = valoresDoLattes(cv, siglas);
-  return CAMPOS.filter((c) => mapa[c.chave]).map((c) => {
+  return CAMPOS.filter((c) => mapa[c.chave]).flatMap((c): CampoProposto[] => {
     const coluna = mapa[c.chave];
     const atual = exibirValor(coluna, item.original[coluna]);
+    const depende = MANUAIS[c.chave];
+    if (depende) {
+      // só pede a área de quem tem a titulação (no Lattes ou na planilha)
+      if (!cv[depende] && !atual) return [];
+      return [{ chave: c.chave, rotulo: c.rotulo, coluna, atual, lattes: atual, situacao: "manual", usar: false }];
+    }
     const valor = lattes[c.chave];
     const tit = FACULDADES[c.chave] ? (cv[FACULDADES[c.chave]] as Titulacao | null) : null;
     const bruto = tit ? instituicaoBruta(tit) : undefined;
@@ -534,7 +612,7 @@ export function propostaDeCampos(
     // a data do Lattes é sempre a mais nova; o resto só entra sozinho
     // onde a planilha estava em branco
     const usar = !!valor && (situacao === "vazio" || (c.chave === "atualizacao" && situacao === "diferente"));
-    return { chave: c.chave, rotulo: c.rotulo, coluna, atual, lattes: valor, situacao, usar, bruto };
+    return [{ chave: c.chave, rotulo: c.rotulo, coluna, atual, lattes: valor, situacao, usar, bruto }];
   });
 }
 
@@ -570,7 +648,8 @@ export async function exportarLote(lote: Lote, itens: ItemColeta[]) {
   await baixarXlsx(`${base} - coleta Lattes.xlsx`, abasDoLote(lote, itens));
 }
 
-export function abasDoLote(lote: Lote, itens: ItemColeta[]): Aba[] {
+export function abasDoLote(loteSalvo: Lote, itens: ItemColeta[]): Aba[] {
+  const lote = { ...loteSalvo, colunas: colunasDoLote(loteSalvo) };
   const { mapa } = mapaDeColunas(lote.colunas);
   const colunaData = mapa.atualizacao;
   const colNome = acharColuna(lote.colunas, ["nome"])!;

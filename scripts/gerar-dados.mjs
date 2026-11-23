@@ -279,6 +279,13 @@ function area(v) {
   return "Outros";
 }
 
+/**
+ * Só titulação de direito processual vira obra no portal; direito
+ * material ("Direito Civil"...) e área ainda não classificada ficam de
+ * fora. Mesma regra de e_processual() no banco.
+ */
+const eProcessual = (v) => fold(v).startsWith("direito processual");
+
 function tipoObra(v) {
   const f = fold(v);
   if (!f) return "Artigo";
@@ -423,7 +430,7 @@ function montarBase() {
   for (const a of associadas) {
     for (const [campo, tipo, mencao] of TITULACOES) {
       const t = a[campo];
-      if (!t?.titulo) continue;
+      if (!t?.titulo || !eProcessual(t.area)) continue;
 
       // O nome fica como está na planilha. Inverter para "SOBRENOME, Nome"
       // erra em nome composto e sobrenome estrangeiro, e numa citação

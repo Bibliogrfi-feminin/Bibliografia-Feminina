@@ -6,6 +6,9 @@ const cors = {
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
 };
 
+/** os valores de role_enum no banco */
+const PAPEIS = ["ADMIN", "ANOTADOR", "PESQUISADOR"];
+
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -52,8 +55,8 @@ Deno.serve(async (req: Request) => {
       const { nome, email, senha, role } = await req.json();
       if (!nome || !email || !senha || !role)
         return json({ error: "nome, email, senha e role sao obrigatorios" }, 400);
-      if (!["ADMIN", "ANOTADOR"].includes(role))
-        return json({ error: "role deve ser ADMIN ou ANOTADOR" }, 400);
+      if (!PAPEIS.includes(role))
+        return json({ error: `role deve ser ${PAPEIS.join(", ")}` }, 400);
       const { data: created, error: err } = await adminClient.auth.admin.createUser({
         email, password: senha, email_confirm: true,
         app_metadata: { role }, user_metadata: { nome },
@@ -66,6 +69,8 @@ Deno.serve(async (req: Request) => {
     if (req.method === "PUT") {
       if (!userId) return json({ error: "id e obrigatorio" }, 400);
       const { nome, email, senha, role } = await req.json();
+      if (role && !PAPEIS.includes(role))
+        return json({ error: `role deve ser ${PAPEIS.join(", ")}` }, 400);
       const authUp: Record<string, unknown> = {};
       if (email) authUp.email = email;
       if (senha) authUp.password = senha;
