@@ -25,6 +25,8 @@ type Aba = "individual" | "lote" | "coleta" | "registros";
 export const Dados = () => {
   const { user } = useAuth();
   const ehAdmin = user?.role === "ADMIN";
+  // pesquisador(a) cadastra e coleta, mas não corrige registros existentes
+  const pesquisador = user?.role === "PESQUISADOR";
   const [aba, setAba] = useState<Aba>("individual");
 
   const abas: { id: Aba; label: string; icone: typeof FilePlus2; descricao: string }[] = [
@@ -34,8 +36,8 @@ export const Dados = () => {
       descricao: "Enviar uma planilha e atualizar a base de uma vez." }] : []),
     { id: "coleta", label: "Coleta Lattes", icone: ScanSearch,
       descricao: "Preencher a planilha de mapeamento a partir do currículo Lattes de cada pessoa." },
-    { id: "registros", label: "Registros", icone: Table2,
-      descricao: "Procurar e corrigir registro por registro." },
+    ...(pesquisador ? [] : [{ id: "registros" as Aba, label: "Registros", icone: Table2,
+      descricao: "Procurar e corrigir registro por registro." }]),
   ];
 
   const atual = abas.find((a) => a.id === aba) ?? abas[0];
@@ -67,7 +69,7 @@ export const Dados = () => {
       {aba === "individual" && <CadastroIndividual />}
       {aba === "lote" && ehAdmin && <AlimentacaoEmLote />}
       {aba === "coleta" && <ColetaLattes />}
-      {aba === "registros" && <AdminCrud />}
+      {aba === "registros" && !pesquisador && <AdminCrud />}
     </div>
   );
 };

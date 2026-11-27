@@ -6,6 +6,9 @@ const cors = {
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
 };
 
+/** os valores de role_enum no banco */
+const PAPEIS = ["ADMIN", "ANOTADOR", "PESQUISADOR"];
+
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -52,20 +55,23 @@ Deno.serve(async (req: Request) => {
       const { nome, email, senha, role } = await req.json();
       if (!nome || !email || !senha || !role)
         return json({ error: "nome, email, senha e role sao obrigatorios" }, 400);
-      if (!["ADMIN", "ANOTADOR"].includes(role))
-        return json({ error: "role deve ser ADMIN ou ANOTADOR" }, 400);
+      if (!PAPEIS.includes(role))
+        return json({ error: `role deve ser ${PAPEIS.join(", ")}` }, 400);
       const { data: created, error: err } = await adminClient.auth.admin.createUser({
         email, password: senha, email_confirm: true,
         app_metadata: { role }, user_metadata: { nome },
       });
       if (err) throw err;
-      await adminClient.from("perfis").upsert({ id: created.user.id, nome, role });
+      // conta nova nasce com senha dada pela administradora: troca no 1º acesso
+      await adminClient.from("perfis").upsert({ id: created.user.id, nome, role, trocar_senha: true });
       return json({ id: created.user.id, email: created.user.email, nome, role }, 201);
     }
 
     if (req.method === "PUT") {
       if (!userId) return json({ error: "id e obrigatorio" }, 400);
       const { nome, email, senha, role } = await req.json();
+      if (role && !PAPEIS.includes(role))
+        return json({ error: `role deve ser ${PAPEIS.join(", ")}` }, 400);
       const authUp: Record<string, unknown> = {};
       if (email) authUp.email = email;
       if (senha) authUp.password = senha;
@@ -78,6 +84,13 @@ Deno.serve(async (req: Request) => {
       const perfilUp: Record<string, unknown> = {};
       if (nome) perfilUp.nome = nome;
       if (role) perfilUp.role = role;
+      // senha redefinida pela administradora para outra pessoa: troca no
+      // próximo acesso. Vem DEPOIS do updateUserById, cujo gatilho no banco
+      // limpa a marca ao mudar a senha.
+      if (senha) {
+        const { data: { user: eu } } = await userClient.auth.getUser();
+        if (eu?.id !== userId) perfilUp.trocar_senha = true;
+      }
       if (Object.keys(perfilUp).length > 0)
         await adminClient.from("perfis").update(perfilUp).eq("id", userId);
       return json({ success: true });

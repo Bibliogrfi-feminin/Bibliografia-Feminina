@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, CheckCircle2, Download, ExternalLink, FileSpreadsheet, Loader2, Play,
   Square, SkipForward, UploadCloud, X, RotateCcw, Puzzle, ChevronDown, Trash2, Search, Replace, Plus, Users,
@@ -6,10 +6,12 @@ import {
 import { useAuth } from "../lib/AuthContext";
 import { supabase } from "../lib/supabase";
 import { lerCurriculoHtml } from "../lib/lattes";
+import { opcoesDeArea } from "../lib/areas";
 import {
   apagarLote, apagarSigla, chaveSigla, listarSiglas, salvarSigla, type Siglas, criarLote, exportarLote, gravarColeta, lerPlanilha, listarItens, listarLotes,
   marcarErro, obrasPropostas, propostaDeCampos, proximoDaFila, revisaoPadrao, salvarRevisao,
   aplicarNaBase, contarBase, criarLoteDaBase, type Revisao as RevisaoAprovada,
+  areasDaFicha, campoManual, colunasDoLote, enviarRevisao, preenchido,
   temConflito, type CampoProposto, type ItemColeta, type Lote, type PlanilhaLida, type StatusItem,
 } from "../lib/coletaLattes";
 
@@ -27,11 +29,13 @@ const ORIGENS_LATTES = ["https://buscatextual.cnpq.br", "http://buscatextual.cnp
 const ESPERA_SCRIPT_MS = 25000;
 
 const ROTULO_STATUS: Record<StatusItem, string> = {
-  PENDENTE: "Pendente", COLETADO: "Coletado", REVISADO: "Revisado", ERRO: "Erro", SEM_LATTES: "Sem Lattes",
+  PENDENTE: "Pendente", COLETADO: "Coletado", AGUARDANDO: "Aguardando conferência", REVISADO: "Revisado",
+  ERRO: "Erro", SEM_LATTES: "Sem Lattes",
 };
 const COR_STATUS: Record<StatusItem, string> = {
   PENDENTE: "bg-slate-100 text-slate-700 border-slate-200",
   COLETADO: "bg-amber-50 text-amber-800 border-amber-200",
+  AGUARDANDO: "bg-sky-50 text-sky-800 border-sky-200",
   REVISADO: "bg-emerald-50 text-emerald-800 border-emerald-200",
   ERRO: "bg-red-50 text-red-800 border-red-200",
   SEM_LATTES: "bg-white text-[var(--text-muted)] border-[var(--border)]",
@@ -44,6 +48,9 @@ const linkDoItem = (it: ItemColeta) => (it.lattes_id ? `http://lattes.cnpq.br/${
 export const ColetaLattes = () => {
   const { user } = useAuth();
   const ehAdmin = user?.role === "ADMIN";
+  // pesquisador(a): coleta e envia revisões para a conferência da equipe;
+  // não cria nem apaga lote, não grava na ficha, não mexe nas siglas
+  const pesquisador = user?.role === "PESQUISADOR";
   const [lotes, setLotes] = useState<Lote[] | null>(null);
   const [loteId, setLoteId] = useState<string | null>(null);
   const [itens, setItens] = useState<ItemColeta[] | null>(null);
@@ -57,9 +64,9 @@ export const ColetaLattes = () => {
       const ls = await listarLotes();
       setLotes(ls);
       setLoteId((atual) => atual ?? ls[0]?.id ?? null);
-      if (ls.length === 0) setNovo(true);
+      if (ls.length === 0 && !pesquisador) setNovo(true);
     } catch (e: any) { setErro(e.message); }
-  }, []);
+  }, [pesquisador]);
 
   useEffect(() => { carregarLotes(); }, [carregarLotes]);
 
@@ -93,15 +100,19 @@ export const ColetaLattes = () => {
             ))}
           </select>
         ) : (
-          <span className="text-sm text-[var(--text-muted)]">Nenhum lote ainda.</span>
+          <span className="text-sm text-[var(--text-muted)]">
+            Nenhum lote ainda.{pesquisador ? " Quem cria os lotes é a equipe (anotadora ou admin)." : ""}
+          </span>
         )}
-        <button onClick={() => setNovo(!novo)}
-          className="ml-auto px-4 py-2 text-sm font-bold rounded-lg border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--bg)] transition flex items-center gap-2">
-          <UploadCloud className="w-4 h-4" /> Novo lote
-        </button>
+        {!pesquisador && (
+          <button onClick={() => setNovo(!novo)}
+            className="ml-auto px-4 py-2 text-sm font-bold rounded-lg border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--bg)] transition flex items-center gap-2">
+            <UploadCloud className="w-4 h-4" /> Novo lote
+          </button>
+        )}
       </div>
 
-      {novo && (
+      {novo && !pesquisador && (
         <NovoLote
           cancelar={lotes && lotes.length > 0 ? () => setNovo(false) : undefined}
           criado={async (l) => { setNovo(false); await carregarLotes(); setLoteId(l.id); }}
@@ -111,7 +122,7 @@ export const ColetaLattes = () => {
       {lote && !novo && (
         itens === null
           ? <div className="p-10 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto" /></div>
-          : <PainelLote lote={lote} itens={itens} atualizarItem={atualizarItem}
+          : <PainelLote lote={lote} itens={itens} atualizarItem={atualizarItem} pesquisador={pesquisador}
               recarregar={() => listarItens(lote.id).then(setItens)}
               apagar={ehAdmin ? async () => {
                 if (!window.confirm(`Apagar o lote "${lote.nome}" e tudo que foi coletado nele?`)) return;
@@ -285,9 +296,9 @@ function NovoLote({ cancelar, criado }: { cancelar?: () => void; criado: (l: Lot
 
 // =================================================================== painel
 
-function PainelLote({ lote, itens, atualizarItem, recarregar, apagar }: {
+function PainelLote({ lote, itens, atualizarItem, recarregar, apagar, pesquisador }: {
   lote: Lote; itens: ItemColeta[]; atualizarItem: (i: ItemColeta) => void;
-  recarregar: () => Promise<void>; apagar?: () => Promise<void>;
+  recarregar: () => Promise<void>; apagar?: () => Promise<void>; pesquisador: boolean;
 }) {
   const [filtro, setFiltro] = useState<StatusItem | "TODOS" | "CONFLITO">("TODOS");
   const [busca, setBusca] = useState("");
@@ -303,12 +314,12 @@ function PainelLote({ lote, itens, atualizarItem, recarregar, apagar }: {
   useEffect(() => { carregarSiglas(); }, [carregarSiglas]);
 
   const contagem = useMemo(() => {
-    const c: Record<StatusItem, number> = { PENDENTE: 0, COLETADO: 0, REVISADO: 0, ERRO: 0, SEM_LATTES: 0 };
+    const c: Record<StatusItem, number> = { PENDENTE: 0, COLETADO: 0, AGUARDANDO: 0, REVISADO: 0, ERRO: 0, SEM_LATTES: 0 };
     for (const i of itens) c[i.status]++;
     return c;
   }, [itens]);
   const naFila = itens.length - contagem.SEM_LATTES;
-  const feitos = contagem.COLETADO + contagem.REVISADO;
+  const feitos = contagem.COLETADO + contagem.AGUARDANDO + contagem.REVISADO;
 
   const semConflito = useMemo(
     () => itens.filter((i) => i.status === "COLETADO" && !temConflito(i, lote.colunas, siglas, daBase)),
@@ -347,9 +358,10 @@ function PainelLote({ lote, itens, atualizarItem, recarregar, apagar }: {
     <div className="space-y-5">
       {/* números */}
       <div className="bg-white p-5 rounded-xl border border-[var(--border)] space-y-4">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-center text-xs">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 text-center text-xs">
           <Numero valor={contagem.PENDENTE} rotulo="pendentes" />
           <Numero valor={contagem.COLETADO} rotulo="coletados (a revisar)" />
+          <Numero valor={contagem.AGUARDANDO} rotulo="aguardando conferência" />
           <Numero valor={contagem.REVISADO} rotulo="revisados" destaque />
           <Numero valor={contagem.ERRO} rotulo="com erro" />
           <Numero valor={contagem.SEM_LATTES} rotulo="sem Lattes" />
@@ -362,11 +374,13 @@ function PainelLote({ lote, itens, atualizarItem, recarregar, apagar }: {
             className="px-4 py-2 bg-[var(--accent)] text-white text-sm font-bold rounded-lg hover:bg-[var(--accent-hover)] transition disabled:opacity-50 flex items-center gap-2">
             <Play className="w-4 h-4" /> Começar coleta
           </button>
-          <button onClick={aprovarEmLote} disabled={!!aprovando || semConflito.length === 0}
-            className="px-4 py-2 text-sm font-bold rounded-lg border border-[var(--border)] hover:bg-[var(--bg)] transition disabled:opacity-50 flex items-center gap-2">
-            {aprovando ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-            {aprovando ? `Aprovando ${aprovando.feitos}/${aprovando.total}` : `Aprovar ${semConflito.length} sem conflito`}
-          </button>
+          {!pesquisador && (
+            <button onClick={aprovarEmLote} disabled={!!aprovando || semConflito.length === 0}
+              className="px-4 py-2 text-sm font-bold rounded-lg border border-[var(--border)] hover:bg-[var(--bg)] transition disabled:opacity-50 flex items-center gap-2">
+              {aprovando ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+              {aprovando ? `Aprovando ${aprovando.feitos}/${aprovando.total}` : `Aprovar ${semConflito.length} sem conflito`}
+            </button>
+          )}
           <button onClick={() => exportarLote(lote, itens).catch((e) => setErro(e.message))}
             className="px-4 py-2 text-sm font-bold rounded-lg border border-[var(--border)] hover:bg-[var(--bg)] transition flex items-center gap-2">
             <Download className="w-4 h-4" /> Baixar planilha
@@ -386,12 +400,12 @@ function PainelLote({ lote, itens, atualizarItem, recarregar, apagar }: {
 
       {erro && <Erro texto={erro} fechar={() => setErro(null)} />}
       {coleta.ativo && <SessaoColeta coleta={coleta} />}
-      <Equivalencias siglas={siglas} mudou={carregarSiglas} />
+      <Equivalencias siglas={siglas} mudou={carregarSiglas} somenteLeitura={pesquisador} />
 
       {/* lista */}
       <div className="bg-white rounded-xl border border-[var(--border)]">
         <div className="p-4 flex flex-wrap gap-2 items-center border-b border-[var(--border)]">
-          {(["TODOS", "PENDENTE", "COLETADO", "CONFLITO", "REVISADO", "ERRO", "SEM_LATTES"] as const).map((f) => (
+          {(["TODOS", "PENDENTE", "COLETADO", "CONFLITO", "AGUARDANDO", "REVISADO", "ERRO", "SEM_LATTES"] as const).map((f) => (
             <button key={f} onClick={() => { setFiltro(f); setLimite(100); }}
               className={`px-3 py-1 rounded-full text-xs font-bold border transition ${
                 filtro === f ? "bg-[var(--accent)] text-white border-[var(--accent)]" : "border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-main)]"
@@ -423,14 +437,17 @@ function PainelLote({ lote, itens, atualizarItem, recarregar, apagar }: {
                 <a href={linkDoItem(it)} target="_blank" rel="noreferrer" title="Abrir o Lattes"
                   className="text-[var(--text-muted)] hover:text-[var(--accent)]"><ExternalLink className="w-4 h-4" /></a>
               )}
-              {it.lattes_id && !coleta.ativo && (
+              {/* pesquisador(a) não coleta de novo o que já foi enviado ou conferido: apagaria a revisão */}
+              {it.lattes_id && !coleta.ativo && !(pesquisador && (it.status === "AGUARDANDO" || it.status === "REVISADO")) && (
                 <button onClick={() => coleta.comecar(it)} title="Coletar só este currículo (de novo)"
                   className="text-[var(--text-muted)] hover:text-[var(--accent)]"><Play className="w-4 h-4" /></button>
               )}
-              {(it.status === "COLETADO" || it.status === "REVISADO") && (
+              {(it.status === "COLETADO" || it.status === "AGUARDANDO" || (it.status === "REVISADO" && !pesquisador)) && (
                 <button onClick={() => setRevisando(it)}
                   className="px-3 py-1 text-xs font-bold rounded-lg border border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--bg)]">
-                  {it.status === "REVISADO" ? "Rever" : "Revisar"}
+                  {it.status === "REVISADO" ? "Rever"
+                    : it.status === "AGUARDANDO" ? (pesquisador ? "Ver envio" : "Conferir")
+                    : "Revisar"}
                 </button>
               )}
             </li>
@@ -446,6 +463,7 @@ function PainelLote({ lote, itens, atualizarItem, recarregar, apagar }: {
 
       {revisando && (
         <Revisao item={revisando} lote={lote} siglas={siglas} aprendeu={carregarSiglas} fechar={() => setRevisando(null)}
+          pesquisador={pesquisador}
           salvo={(i) => { atualizarItem(i); setRevisando(null); }} />
       )}
     </div>
@@ -627,18 +645,31 @@ function SessaoColeta({ coleta }: { coleta: ReturnType<typeof useColeta> }) {
 
 // ================================================================= revisão
 
-function Revisao({ item, lote, siglas, aprendeu, fechar, salvo }: {
+function Revisao({ item, lote, siglas, aprendeu, fechar, salvo, pesquisador }: {
   item: ItemColeta; lote: Lote; siglas: Siglas; aprendeu: () => Promise<void>;
-  fechar: () => void; salvo: (i: ItemColeta) => void;
+  fechar: () => void; salvo: (i: ItemColeta) => void; pesquisador: boolean;
 }) {
   const cv = item.coletado!;
-  const [campos, setCampos] = useState<CampoProposto[]>(() => {
-    const p = propostaDeCampos(item, lote.colunas, siglas, lote.origem === "BASE");
-    // revendo: o que já foi aprovado volta marcado, com o valor aprovado
-    if (item.revisao) return p.map((c) => c.coluna in item.revisao!.campos
-      ? { ...c, usar: true, lattes: item.revisao!.campos[c.coluna] } : { ...c, usar: false });
-    return p;
-  });
+  const daBase = lote.origem === "BASE";
+  const colunas = colunasDoLote(lote);
+  // revendo: o que já foi aprovado volta marcado, com o valor aprovado
+  const restaurar = (p: CampoProposto[]) => !item.revisao ? p : p.map((c) => c.coluna in item.revisao!.campos
+    ? { ...c, usar: true, lattes: item.revisao!.campos[c.coluna] } : { ...c, usar: false });
+  const [campos, setCampos] = useState<CampoProposto[]>(() => restaurar(propostaDeCampos(item, colunas, siglas, daBase)));
+
+  // lote da base criado antes das áreas: o valor atual vem da ficha
+  useEffect(() => {
+    if (!daBase || !item.associada_id || colunas.every((c) => c in item.original)) return;
+    let vivo = true;
+    areasDaFicha(item.associada_id).then((areas) => {
+      if (!vivo) return;
+      const novas = restaurar(propostaDeCampos({ ...item, original: { ...areas, ...item.original } }, colunas, siglas, true));
+      // só as linhas de área mudam; o que já foi mexido nas outras fica
+      setCampos((atuais) => novas.map((n) => campoManual(n.chave) ? n : atuais.find((a) => a.chave === n.chave) ?? n));
+    }).catch((e) => vivo && setErro(`Não deu para ler a área atual da ficha: ${e.message}`));
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id]);
   const [obras, setObras] = useState(() => {
     const p = obrasPropostas(item);
     if (!item.revisao) return p;
@@ -658,7 +689,7 @@ function Revisao({ item, lote, siglas, aprendeu, fechar, salvo }: {
     try {
       await salvarSigla(bruto, para);
       const novas = new Map(siglas).set(chaveSigla(bruto), para.trim());
-      const refeitas = propostaDeCampos(item, lote.colunas, novas, lote.origem === "BASE");
+      const refeitas = propostaDeCampos(item, colunas, novas, daBase);
       setCampos((atuais) => atuais.map((c) =>
         c.bruto !== undefined && chaveSigla(c.bruto) === chaveSigla(bruto)
           ? refeitas.find((r) => r.chave === c.chave) ?? c : c));
@@ -666,13 +697,19 @@ function Revisao({ item, lote, siglas, aprendeu, fechar, salvo }: {
     } catch (e: any) { setErro(e.message); }
   };
 
+  /** pesquisador(a) pode corrigir, mas não deixar em branco o que já estava preenchido */
+  const bloqueado = (c: CampoProposto) => pesquisador && preenchido(c.atual) && !preenchido(c.lattes);
+  const usar = (c: CampoProposto) => c.usar && !bloqueado(c);
+
   const salvar = async () => {
     setOcupado(true); setErro(null);
     try {
       const revisao = {
-        campos: Object.fromEntries(campos.filter((c) => c.usar).map((c) => [c.coluna, c.lattes])),
+        campos: Object.fromEntries(campos.filter(usar).map((c) => [c.coluna, c.lattes])),
         obras: obras.filter((o) => o.usar).map((o) => ({ citacao: o.citacao, ano: o.ano ?? "", secao: o.secao, tipoSugerido: o.tipoSugerido })),
       };
+      // pesquisador(a) só envia: quem grava é a equipe, na conferência
+      if (pesquisador) { salvo(await enviarRevisao(item, revisao)); return; }
       // no lote da base, a ficha muda antes: se o portal recusar, a
       // revisão não fica marcada como aprovada
       if (lote.origem === "BASE") await aplicarNaBase(item, revisao as RevisaoAprovada);
@@ -680,13 +717,16 @@ function Revisao({ item, lote, siglas, aprendeu, fechar, salvo }: {
     } catch (e: any) { setErro(e.message); setOcupado(false); }
   };
 
+  const enviadaEm = item.status === "AGUARDANDO" && item.proposto_em
+    ? new Date(item.proposto_em).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : null;
+
   const dentro = obras.filter((o) => !o.foraDoRecorte);
   const fora = obras.filter((o) => o.foraDoRecorte);
   const marcadas = obras.filter((o) => o.usar).length;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 overflow-y-auto" onClick={fechar}>
-      <div className="bg-white rounded-xl w-full max-w-5xl my-8 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-xl w-full max-w-6xl my-8 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="p-5 border-b border-[var(--border)] flex items-start gap-3">
           <div className="flex-1">
             <h3 className="font-serif italic text-lg text-[var(--text-main)]">{item.nome}</h3>
@@ -700,6 +740,18 @@ function Revisao({ item, lote, siglas, aprendeu, fechar, salvo }: {
         </div>
 
         <div className="p-5 space-y-6">
+          {item.status === "AGUARDANDO" && (
+            <div className="text-xs bg-sky-50 border border-sky-200 text-sky-900 rounded-lg p-3">
+              {pesquisador
+                ? <>Enviada para a conferência da equipe{enviadaEm ? ` em ${enviadaEm}` : ""}. Você ainda pode ajustar e reenviar.</>
+                : <>Revisão enviada por pesquisador(a){enviadaEm ? ` em ${enviadaEm}` : ""}. Os campos marcados são a proposta: confira, ajuste se precisar e grave.</>}
+            </div>
+          )}
+          {pesquisador && item.status !== "AGUARDANDO" && (
+            <p className="text-xs text-[var(--text-muted)]">
+              Sua revisão vai para a conferência de uma anotadora ou admin antes de entrar no portal.
+            </p>
+          )}
           {(cv.avisos.length > 0 || cv.emAndamento.length > 0) && (
             <div className="text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-3 space-y-1">
               {cv.avisos.map((a, i) => <p key={i} className="flex gap-1.5"><AlertTriangle className="w-3.5 h-3.5 shrink-0" />{a}</p>)}
@@ -710,28 +762,50 @@ function Revisao({ item, lote, siglas, aprendeu, fechar, salvo }: {
           <section>
             <h4 className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">ABA 1 — campo a campo</h4>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              {/* a coluna do Lattes é onde o grupo trabalha: fica com a maior parte */}
+              <table className="w-full text-sm table-fixed min-w-[640px]">
+                <colgroup>
+                  <col className="w-8" /><col className="w-44" /><col className="w-[28%]" /><col />
+                </colgroup>
                 <thead>
                   <tr className="text-left text-xs text-[var(--text-muted)]">
-                    <th className="p-2 w-8"></th><th className="p-2">Campo</th><th className="p-2">{lote.origem === "BASE" ? "No portal" : "Na planilha"}</th><th className="p-2">Do Lattes (editável)</th>
+                    <th className="p-2"></th><th className="p-2">Campo</th><th className="p-2">{lote.origem === "BASE" ? "No portal" : "Na planilha"}</th><th className="p-2">Do Lattes (editável)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {campos.map((c, k) => (
-                    <tr key={c.chave} className={`border-t border-[var(--border)] ${c.situacao === "diferente" ? "bg-amber-50/60" : ""}`}>
+                    <tr key={c.chave} className={`border-t border-[var(--border)] align-top ${c.situacao === "diferente" ? "bg-amber-50/60" : ""}`}>
                       <td className="p-2">
-                        <input type="checkbox" checked={c.usar} disabled={c.situacao === "igual"}
+                        <input type="checkbox" checked={usar(c)}
+                          disabled={c.situacao === "igual" || (c.situacao === "manual" && !c.lattes) || bloqueado(c)}
                           onChange={(e) => setCampos(campos.map((x, j) => (j === k ? { ...x, usar: e.target.checked } : x)))} />
                       </td>
-                      <td className="p-2 text-xs font-bold text-[var(--text-main)] whitespace-nowrap">{c.rotulo}</td>
-                      <td className="p-2 text-xs text-[var(--text-muted)]">{c.atual || <em>vazio</em>}</td>
+                      <td className="p-2 text-xs font-bold text-[var(--text-main)]">{c.rotulo}</td>
+                      <td className="p-2 text-xs text-[var(--text-muted)] break-words">{c.atual || <em>vazio</em>}</td>
                       <td className="p-2">
                         {c.situacao === "igual"
                           ? <span className="text-xs text-emerald-700">igual</span>
-                          : <input value={c.lattes}
-                              onChange={(e) => setCampos(campos.map((x, j) => (j === k ? { ...x, lattes: e.target.value, usar: true } : x)))}
-                              className="w-full border border-[var(--border)] rounded px-2 py-1 text-xs" />}
-                        <Lembrar campo={c} siglas={siglas} lembrar={lembrar} />
+                          : c.situacao === "manual"
+                          ? <>
+                              <select value={c.lattes}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setCampos(campos.map((x, j) => (j === k ? { ...x, lattes: v, usar: !!v && v !== x.atual } : x)));
+                                }}
+                                className="w-full border border-[var(--border)] rounded px-2 py-1 text-xs bg-white">
+                                <option value="">— classificar —</option>
+                                {opcoesDeArea(c.atual).map((a) => <option key={a} value={a}>{a}</option>)}
+                              </select>
+                              <span className="block mt-1 text-[11px] text-[var(--text-muted)]">O Lattes não informa: classificação do grupo.</span>
+                            </>
+                          : <TextoCrescente value={c.lattes}
+                              onChange={(v) => setCampos(campos.map((x, j) => (j === k ? { ...x, lattes: v, usar: true } : x)))} />}
+                        {bloqueado(c) && c.situacao !== "igual" && (
+                          <span className="block mt-1 text-[11px] text-amber-800">
+                            Já preenchido: pesquisador(a) pode corrigir, mas não deixar em branco.
+                          </span>
+                        )}
+                        {!pesquisador && <Lembrar campo={c} siglas={siglas} lembrar={lembrar} />}
                       </td>
                     </tr>
                   ))}
@@ -762,7 +836,12 @@ function Revisao({ item, lote, siglas, aprendeu, fechar, salvo }: {
           <button onClick={fechar} className="px-4 py-2 text-sm font-bold rounded-lg border border-[var(--border)]">Cancelar</button>
           <button onClick={salvar} disabled={ocupado}
             className="px-5 py-2 bg-[var(--accent)] text-white text-sm font-bold rounded-lg hover:bg-[var(--accent-hover)] disabled:opacity-60 flex items-center gap-2">
-            {ocupado ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} {lote.origem === "BASE" ? "Aprovar e gravar na ficha" : "Aprovar revisão"}
+            {ocupado ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}{" "}
+            {pesquisador
+              ? (item.status === "AGUARDANDO" ? "Reenviar para conferência" : "Enviar para conferência")
+              : item.status === "AGUARDANDO"
+              ? (lote.origem === "BASE" ? "Conferir e gravar na ficha" : "Conferir e aprovar")
+              : (lote.origem === "BASE" ? "Aprovar e gravar na ficha" : "Aprovar revisão")}
           </button>
         </div>
       </div>
@@ -816,7 +895,7 @@ function Lembrar({ campo: c, siglas, lembrar }: {
   );
 }
 
-function Equivalencias({ siglas, mudou }: { siglas: Siglas; mudou: () => Promise<void> }) {
+function Equivalencias({ siglas, mudou, somenteLeitura }: { siglas: Siglas; mudou: () => Promise<void>; somenteLeitura?: boolean }) {
   const [aberto, setAberto] = useState(false);
   const [de, setDe] = useState("");
   const [para, setPara] = useState("");
@@ -854,6 +933,7 @@ function Equivalencias({ siglas, mudou }: { siglas: Siglas; mudou: () => Promise
             Vale para todos os lotes, inclusive o que já foi coletado.
           </p>
           <div className="flex flex-wrap gap-2 items-end">
+            {!somenteLeitura && <>
             <label className="text-xs">
               <span className="block font-bold text-[var(--text-muted)] mb-1">No Lattes</span>
               <input value={de} onChange={(e) => setDe(e.target.value)} placeholder="FDUSP"
@@ -868,6 +948,7 @@ function Equivalencias({ siglas, mudou }: { siglas: Siglas; mudou: () => Promise
               className="px-3 py-2 text-xs font-bold rounded-lg bg-[var(--accent)] text-white disabled:opacity-50 flex items-center gap-1">
               <Plus className="w-3.5 h-3.5" /> Adicionar
             </button>
+            </>}
             <label className="ml-auto flex items-center gap-2 border border-[var(--border)] rounded-lg px-3 py-1.5">
               <Search className="w-4 h-4 text-[var(--text-muted)]" />
               <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Procurar"
@@ -881,9 +962,11 @@ function Equivalencias({ siglas, mudou }: { siglas: Siglas; mudou: () => Promise
                 <span className="font-mono text-xs w-56 truncate" title={k}>{k}</span>
                 <span className="text-[var(--text-muted)]">→</span>
                 <span className="font-bold flex-1">{v}</span>
-                <button onClick={() => remover(k)} title="Remover" className="text-[var(--text-muted)] hover:text-red-700">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                {!somenteLeitura && (
+                  <button onClick={() => remover(k)} title="Remover" className="text-[var(--text-muted)] hover:text-red-700">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </li>
             ))}
             {lista.length === 0 && <li className="p-3 text-xs text-[var(--text-muted)]">Nenhuma.</li>}
@@ -895,6 +978,24 @@ function Equivalencias({ siglas, mudou }: { siglas: Siglas; mudou: () => Promise
 }
 
 // ============================================================== miudezas
+
+/** Caixa de texto que cresce com o conteúdo: títulos longos aparecem inteiros. */
+function TextoCrescente({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+  return (
+    <textarea ref={ref} rows={1} value={value}
+      // título não tem quebra de linha: Enter não deve criar uma
+      onChange={(e) => onChange(e.target.value.replace(/\r?\n/g, " "))}
+      onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
+      className="w-full border border-[var(--border)] rounded px-2 py-1 text-xs resize-none overflow-hidden leading-snug block" />
+  );
+}
 
 function Numero({ valor, rotulo, destaque }: { valor: number; rotulo: string; destaque?: boolean }) {
   return (

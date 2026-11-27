@@ -1,13 +1,16 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { supabase } from "./supabase";
 
-type User = { id: string; nome: string; email: string; role: string };
+/** trocarSenha: senha dada pela administradora, ainda não trocada */
+type User = { id: string; nome: string; email: string; role: string; trocarSenha: boolean };
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** relê o perfil (depois de trocar a senha, a marca sai) */
+  recarregarPerfil: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
@@ -19,10 +22,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const fetchPerfil = async (userId: string, email: string) => {
     const { data } = await supabase
       .from("perfis")
-      .select("id, nome, role")
+      .select("id, nome, role, trocar_senha")
       .eq("id", userId)
       .single();
-    if (data) setUser({ id: data.id, nome: data.nome, email, role: data.role });
+    if (data) setUser({ id: data.id, nome: data.nome, email, role: data.role, trocarSenha: !!data.trocar_senha });
+  };
+
+  const recarregarPerfil = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) await fetchPerfil(session.user.id, session.user.email!);
   };
 
   useEffect(() => {
@@ -56,7 +64,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, recarregarPerfil }}>
       {children}
     </AuthContext.Provider>
   );
